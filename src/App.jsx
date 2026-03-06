@@ -251,14 +251,27 @@ function Tabs({ tabs, active, onChange }) {
   );
 }
 
-function SearchInput({ value, onChange, onSearch, placeholder }) {
+function SearchInput({ onSearch, placeholder, initialValue = "" }) {
+  const [localValue, setLocalValue] = useState(initialValue);
+  
+  const handleSearch = () => {
+    onSearch(localValue);
+  };
+  
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      onSearch(localValue);
+    }
+  };
+  
   return (
     <div style={{ display: "flex", gap: 0, flex: 1, maxWidth: 400 }}>
       <input
         type="text"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        onKeyDown={e => e.key === "Enter" && onSearch()}
+        value={localValue}
+        onChange={e => setLocalValue(e.target.value)}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         style={{
           flex: 1,
@@ -270,7 +283,16 @@ function SearchInput({ value, onChange, onSearch, placeholder }) {
           minWidth: 0,
         }}
       />
-      <Button onClick={onSearch} style={{ borderRadius: "0 8px 8px 0" }}>Search</Button>
+      <Button onClick={handleSearch} style={{ borderRadius: "0 8px 8px 0" }}>Search</Button>
+      {localValue && (
+        <Button 
+          variant="ghost" 
+          onClick={() => { setLocalValue(""); onSearch(""); }}
+          style={{ marginLeft: 8 }}
+        >
+          Clear
+        </Button>
+      )}
     </div>
   );
 }
@@ -409,11 +431,9 @@ export default function Banded() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // Filters
-  const [searchTerm, setSearchTerm] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [familyFilter, setFamilyFilter] = useState("All");
   const [metroFilter, setMetroFilter] = useState("All");
-  const [levelFilter, setLevelFilter] = useState("All");
   
   // Band Builder
   const [bandFamily, setBandFamily] = useState("Software Engineering");
@@ -731,9 +751,7 @@ export default function Banded() {
       <Card padding={false} style={{ padding: "16px 20px" }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <SearchInput 
-            value={searchTerm} 
-            onChange={setSearchTerm} 
-            onSearch={() => setSearchQuery(searchTerm)}
+            onSearch={setSearchQuery}
             placeholder="Search company or title..."
           />
           <Select 
@@ -747,7 +765,7 @@ export default function Banded() {
             options={["All", ...METROS.map(m => m.name)]} 
           />
           {(searchQuery || familyFilter !== "All" || metroFilter !== "All") && (
-            <Button variant="ghost" onClick={() => { setSearchTerm(""); setSearchQuery(""); setFamilyFilter("All"); setMetroFilter("All"); }}>
+            <Button variant="ghost" onClick={() => { setSearchQuery(""); setFamilyFilter("All"); setMetroFilter("All"); }}>
               Clear filters
             </Button>
           )}
