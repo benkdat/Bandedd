@@ -839,11 +839,62 @@ export default function Banded() {
   const AdminReview = () => {
     const [actionLoading, setActionLoading] = useState(null);
     const [adminTab, setAdminTab] = useState('pending');
+    const [editingId, setEditingId] = useState(null);
+    const [editForm, setEditForm] = useState({});
 
-    const handleApprove = async (id, sub) => {
+    const startEdit = (sub) => {
+      setEditingId(sub.id);
+      setEditForm({
+        job_title: sub.job_title,
+        company: sub.company,
+        job_family: sub.job_family,
+        base_salary: sub.base_salary,
+        metro: sub.metro,
+      });
+    };
+
+    const cancelEdit = () => {
+      setEditingId(null);
+      setEditForm({});
+    };
+
+    const saveEdit = async (id) => {
       setActionLoading(id);
       try {
-        // Add to comp_data - only use columns we know exist
+        const { error } = await supabase
+          .from('submissions')
+          .update({
+            job_title: editForm.job_title,
+            company: editForm.company,
+            job_family: editForm.job_family,
+            base_salary: parseInt(editForm.base_salary),
+            metro: editForm.metro,
+          })
+          .eq('id', id);
+        
+        if (error) {
+          alert("Failed to save: " + error.message);
+        } else {
+          setSubmissions(s => s.map(x => x.id === id ? { ...x, ...editForm, base_salary: parseInt(editForm.base_salary) } : x));
+          setEditingId(null);
+          setEditForm({});
+        }
+      } catch (err) {
+        alert("Error: " + err.message);
+      }
+      setActionLoading(null);
+    };
+
+    const handleApprove = async (id, sub) => {
+      // Check if already approved to prevent duplicates
+      if (sub.status === 'approved') {
+        alert("This submission has already been approved.");
+        return;
+      }
+      
+      setActionLoading(id);
+      try {
+        // Add to comp_data
         const insertData = {
           company: sub.company,
           family: sub.job_family,
@@ -875,7 +926,7 @@ export default function Banded() {
           console.error("Update error:", updateError);
         }
         
-        // Remove from local state
+        // Update local state
         setSubmissions(s => s.map(x => x.id === id ? { ...x, status: 'approved' } : x));
         
       } catch (err) {
@@ -904,9 +955,65 @@ export default function Banded() {
       setActionLoading(null);
     };
 
+    const handleDelete = async (id) => {
+      if (!confirm("Delete this submission permanently?")) return;
+      
+      setActionLoading(id);
+      try {
+        const { error } = await supabase
+          .from('submissions')
+          .delete()
+          .eq('id', id);
+        
+        if (!error) {
+          setSubmissions(s => s.filter(x => x.id !== id));
+        }
+      } catch (err) {
+        console.error("Delete error:", err);
+      }
+      setActionLoading(null);
+    };
+
     const pending = submissions.filter(s => s.status === 'pending');
     const approved = submissions.filter(s => s.status === 'approved');
     const rejected = submissions.filter(s => s.status === 'rejected');
+
+    const inputStyle = { padding: '6px 10px', borderRadius: 5, border: `1px solid ${V.border}`, fontSize: 12, width: '100%' };
+
+    const renderEditableRow = (row) => {
+      if (editingId === row.id) {
+        return (
+          <tr key={row.id} style={{ background: V.bgWarm }}>
+            <td style={{ padding: 10 }}>
+              <input style={inputStyle} value={editForm.job_title} onChange={e => setEditForm({...editForm, job_title: e.target.value})} />
+            </td>
+            <td style={{ padding: 10 }}>
+              <input style={inputStyle} value={editForm.company} onChange={e => setEditForm({...editForm, company: e.target.value})} />
+            </td>
+            <td style={{ padding: 10 }}>
+              <select style={inputStyle} value={editForm.job_family} onChange={e => setEditForm({...editForm, job_family: e.target.value})}>
+                {Object.keys(JOB_FAMILIES).map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </td>
+            <td style={{ padding: 10 }}>
+              <input style={inputStyle} type="number" value={editForm.base_salary} onChange={e => setEditForm({...editForm, base_salary: e.target.value})} />
+            </td>
+            <td style={{ padding: 10 }}>
+              <select style={inputStyle} value={editForm.metro} onChange={e => setEditForm({...editForm, metro: e.target.value})}>
+                {METROS.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+              </select>
+            </td>
+            <td style={{ padding: 10 }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => saveEdit(row.id)} style={{ padding: "4px 10px", borderRadius: 4, border: "none", background: V.teal, color: "#fff", fontSize: 11, cursor: "pointer" }}>Save</button>
+                <button onClick={cancelEdit} style={{ padding: "4px 10px", borderRadius: 4, border: `1px solid ${V.border}`, background: "transparent", color: V.inkMuted, fontSize: 11, cursor: "pointer" }}>Cancel</button>
+              </div>
+            </td>
+          </tr>
+        );
+      }
+      return null;
+    };
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -936,32 +1043,37 @@ export default function Banded() {
             {pending.length === 0 ? (
               <p style={{ color: V.inkMuted, fontSize: 13 }}>No pending submissions. 🎉</p>
             ) : (
-              <SortableTable data={pending} columns={[
-                { key: "job_title", label: "Title", render: v => <strong style={{ color: V.ink }}>{v}</strong> },
-                { key: "company", label: "Company" },
-                { key: "job_family", label: "Family" },
-                { key: "base_salary", label: "Salary", align: "right", render: v => <span className="mono">{fmt(v)}</span> },
-                { key: "metro", label: "Metro" },
-                { key: "submitted_at", label: "Submitted", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{timeAgo(v)}</span> },
-                { key: "actions", label: "Actions", render: (_, row) => (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button 
-                      onClick={() => handleApprove(row.id, row)} 
-                      disabled={actionLoading === row.id}
-                      style={{ padding: "4px 12px", borderRadius: 5, border: "none", background: V.teal, color: "#fff", fontSize: 11, cursor: actionLoading === row.id ? "not-allowed" : "pointer", opacity: actionLoading === row.id ? 0.5 : 1 }}
-                    >
-                      {actionLoading === row.id ? '...' : 'Approve'}
-                    </button>
-                    <button 
-                      onClick={() => handleReject(row.id)} 
-                      disabled={actionLoading === row.id}
-                      style={{ padding: "4px 12px", borderRadius: 5, border: `1px solid ${V.rose}`, background: "transparent", color: V.rose, fontSize: 11, cursor: actionLoading === row.id ? "not-allowed" : "pointer" }}
-                    >
-                      Reject
-                    </button>
-                  </div>
-                )}
-              ]} />
+              <div style={{ overflowX: "auto", borderRadius: 8, border: `1px solid ${V.border}` }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      {["Title", "Company", "Family", "Salary", "Metro", "Actions"].map(h => (
+                        <th key={h} style={{ padding: "11px 14px", background: V.bgWarm, color: V.inkMuted, border: "none", borderBottom: `1px solid ${V.border}`, fontWeight: 600, fontSize: 11, letterSpacing: "0.04em", textTransform: "uppercase", textAlign: "left", fontFamily: "var(--font-mono)" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pending.map(row => (
+                      editingId === row.id ? renderEditableRow(row) : (
+                        <tr key={row.id} style={{ borderBottom: `1px solid ${V.borderLight}` }}>
+                          <td style={{ padding: "10px 14px" }}><strong style={{ color: V.ink }}>{row.job_title}</strong></td>
+                          <td style={{ padding: "10px 14px", color: V.inkSoft }}>{row.company}</td>
+                          <td style={{ padding: "10px 14px", color: V.inkSoft }}>{row.job_family}</td>
+                          <td style={{ padding: "10px 14px" }}><span className="mono">{fmt(row.base_salary)}</span></td>
+                          <td style={{ padding: "10px 14px", color: V.inkSoft }}>{row.metro}</td>
+                          <td style={{ padding: "10px 14px" }}>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button onClick={() => startEdit(row)} style={{ padding: "4px 10px", borderRadius: 4, border: `1px solid ${V.border}`, background: "transparent", color: V.inkMuted, fontSize: 11, cursor: "pointer" }}>Edit</button>
+                              <button onClick={() => handleApprove(row.id, row)} disabled={actionLoading === row.id} style={{ padding: "4px 10px", borderRadius: 4, border: "none", background: V.teal, color: "#fff", fontSize: 11, cursor: "pointer", opacity: actionLoading === row.id ? 0.5 : 1 }}>{actionLoading === row.id ? '...' : 'Approve'}</button>
+                              <button onClick={() => handleReject(row.id)} disabled={actionLoading === row.id} style={{ padding: "4px 10px", borderRadius: 4, border: `1px solid ${V.rose}`, background: "transparent", color: V.rose, fontSize: 11, cursor: "pointer" }}>Reject</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </section>
         )}
@@ -970,6 +1082,7 @@ export default function Banded() {
         {adminTab === 'approved' && (
           <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
             <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 16 }}>Approved Submissions</h3>
+            <p style={{ fontSize: 12, color: V.inkFaint, marginBottom: 16 }}>These have been added to comp_data.</p>
             {approved.length === 0 ? (
               <p style={{ color: V.inkMuted, fontSize: 13 }}>No approved submissions yet.</p>
             ) : (
@@ -979,11 +1092,8 @@ export default function Banded() {
                 { key: "job_family", label: "Family" },
                 { key: "base_salary", label: "Salary", align: "right", render: v => <span className="mono">{fmt(v)}</span> },
                 { key: "metro", label: "Metro" },
-                { key: "submitted_at", label: "Submitted", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{timeAgo(v)}</span> },
-                { key: "status", label: "Status", render: () => (
-                  <span style={{ padding: "2px 8px", borderRadius: 4, background: V.tealMuted, color: V.tealDark, fontSize: 11, fontWeight: 600 }}>
-                    Approved
-                  </span>
+                { key: "actions", label: "", render: (_, row) => (
+                  <button onClick={() => handleDelete(row.id)} style={{ padding: "4px 8px", borderRadius: 4, border: `1px solid ${V.border}`, background: "transparent", color: V.inkFaint, fontSize: 10, cursor: "pointer" }}>Delete</button>
                 )}
               ]} />
             )}
@@ -1003,11 +1113,8 @@ export default function Banded() {
                 { key: "job_family", label: "Family" },
                 { key: "base_salary", label: "Salary", align: "right", render: v => <span className="mono">{fmt(v)}</span> },
                 { key: "metro", label: "Metro" },
-                { key: "submitted_at", label: "Submitted", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{timeAgo(v)}</span> },
-                { key: "status", label: "Status", render: () => (
-                  <span style={{ padding: "2px 8px", borderRadius: 4, background: V.roseMuted, color: V.rose, fontSize: 11, fontWeight: 600 }}>
-                    Rejected
-                  </span>
+                { key: "actions", label: "", render: (_, row) => (
+                  <button onClick={() => handleDelete(row.id)} style={{ padding: "4px 8px", borderRadius: 4, border: `1px solid ${V.border}`, background: "transparent", color: V.inkFaint, fontSize: 10, cursor: "pointer" }}>Delete</button>
                 )}
               ]} />
             )}
