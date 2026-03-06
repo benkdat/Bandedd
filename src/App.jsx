@@ -1,196 +1,281 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, AreaChart, Area, Cell, Legend, PieChart, Pie,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line,
 } from "recharts";
-import _ from "lodash";
 import { supabase } from "./supabaseClient";
 
+// ============================================================================
+// DESIGN SYSTEM
+// ============================================================================
+
 const V = {
-  bg: "#FAFAF7", bgWarm: "#F5F3EE", surface: "#FFFFFF", surfaceMuted: "#F0EDE6",
-  border: "#E4E0D8", borderLight: "#EBE8E1", ink: "#1A1A18", inkSoft: "#3D3D38",
-  inkMuted: "#7A7A70", inkFaint: "#B0AEA4", teal: "#0D9488", tealDark: "#0F766E",
-  tealLight: "#CCFBF1", tealMuted: "rgba(13,148,136,0.08)", rose: "#E11D48",
-  roseMuted: "rgba(225,29,72,0.06)", amber: "#D97706", amberMuted: "rgba(217,119,6,0.08)",
-  blue: "#2563EB", blueMuted: "rgba(37,99,235,0.06)", violet: "#7C3AED",
-  chartSet: ["#0D9488", "#2563EB", "#D97706", "#E11D48", "#7C3AED", "#059669", "#DC2626", "#7C3AED"],
-  focus: "0 0 0 2px #FAFAF7, 0 0 0 4px #0D9488",
+  // Backgrounds
+  bg: "#F8FAFC", bgAlt: "#F1F5F9", surface: "#FFFFFF", surfaceHover: "#F8FAFC",
+  // Borders
+  border: "#E2E8F0", borderLight: "#F1F5F9",
+  // Text
+  ink: "#0F172A", inkSoft: "#334155", inkMuted: "#64748B", inkFaint: "#94A3B8",
+  // Primary (teal)
+  primary: "#0D9488", primaryDark: "#0F766E", primaryLight: "#CCFBF1", primaryMuted: "rgba(13,148,136,0.1)",
+  // Accents
+  blue: "#3B82F6", blueMuted: "rgba(59,130,246,0.1)",
+  amber: "#F59E0B", amberMuted: "rgba(245,158,11,0.1)",
+  rose: "#F43F5E", roseMuted: "rgba(244,63,94,0.1)",
+  violet: "#8B5CF6", violetMuted: "rgba(139,92,246,0.1)",
+  green: "#10B981", greenMuted: "rgba(16,185,129,0.1)",
+  // Charts
+  chartColors: ["#0D9488", "#3B82F6", "#F59E0B", "#F43F5E", "#8B5CF6", "#10B981"],
 };
 
 const GLOBAL_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
-  *, *::before, *::after { box-sizing: border-box; margin: 0; }
-  :root { color-scheme: light; --font-display: 'Instrument Serif', Georgia, serif; --font-body: 'Geist', -apple-system, sans-serif; --font-mono: 'Geist Mono', 'SF Mono', monospace; }
-  body { font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
-  :focus-visible { outline: none; box-shadow: ${V.focus}; border-radius: 4px; }
-  :focus:not(:focus-visible) { outline: none; }
-  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 16px; }
+  body { 
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; 
+    background: ${V.bg}; 
+    color: ${V.ink}; 
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; }
+  input, select { font-family: inherit; }
+  
+  /* Mobile-first responsive */
+  @media (max-width: 768px) {
+    html { font-size: 14px; }
+  }
+  
+  /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: ${V.border}; border-radius: 3px; }
-  h1, h2, h3 { text-wrap: balance; }
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-  .fade-up { animation: fadeUp 0.4s ease-out both; }
-  .fade-up-1 { animation-delay: 0ms; } .fade-up-2 { animation-delay: 60ms; } .fade-up-3 { animation-delay: 120ms; } .fade-up-4 { animation-delay: 180ms; }
+  
+  /* Animations */
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.3s ease-out; }
+  
+  /* Focus states */
+  :focus-visible { outline: 2px solid ${V.primary}; outline-offset: 2px; border-radius: 4px; }
 `;
 
+// ============================================================================
+// DATA CONFIG
+// ============================================================================
+
 const JOB_FAMILIES = {
-  "Software Engineering": { levels: ["Junior Engineer", "Engineer", "Senior Engineer", "Staff Engineer", "Principal Engineer", "Distinguished Engineer"], codes: ["IC1", "IC2", "IC3", "IC4", "IC5", "IC6"], base: [85000, 450000] },
-  "Product Management": { levels: ["Associate PM", "Product Manager", "Senior PM", "Group PM", "Director of Product", "VP Product"], codes: ["IC1", "IC2", "IC3", "IC4", "M3", "M5"], base: [90000, 380000] },
-  "Data Science": { levels: ["Junior Data Scientist", "Data Scientist", "Senior Data Scientist", "Staff Data Scientist", "Principal Data Scientist"], codes: ["IC1", "IC2", "IC3", "IC4", "IC5"], base: [80000, 350000] },
-  "Design": { levels: ["Junior Designer", "Product Designer", "Senior Designer", "Staff Designer", "Design Director"], codes: ["IC1", "IC2", "IC3", "IC4", "M3"], base: [70000, 300000] },
-  "DevOps / SRE": { levels: ["Junior SRE", "SRE", "Senior SRE", "Staff SRE", "Principal SRE"], codes: ["IC1", "IC2", "IC3", "IC4", "IC5"], base: [82000, 370000] },
-  "People / HR": { levels: ["HR Coordinator", "HR Generalist", "HRBP", "Senior HRBP", "Director HR", "VP People"], codes: ["IC1", "IC2", "IC3", "IC4", "M3", "M5"], base: [55000, 280000] },
-  "Marketing": { levels: ["Marketing Coordinator", "Marketing Manager", "Senior Marketing Manager", "Director Marketing", "VP Marketing"], codes: ["IC1", "IC2", "IC3", "M3", "M5"], base: [55000, 300000] },
-  "Sales": { levels: ["SDR", "Account Executive", "Senior AE", "Enterprise AE", "Sales Director", "VP Sales"], codes: ["IC1", "IC2", "IC3", "IC4", "M3", "M5"], base: [50000, 320000] },
+  "Software Engineering": { icon: "💻", levels: ["Junior", "Mid", "Senior", "Staff", "Principal", "Distinguished"], codes: ["L3", "L4", "L5", "L6", "L7", "L8"] },
+  "Product Management": { icon: "📊", levels: ["Associate PM", "PM", "Senior PM", "Group PM", "Director", "VP"], codes: ["L3", "L4", "L5", "L6", "M1", "M2"] },
+  "Data Science": { icon: "🔬", levels: ["Junior", "Data Scientist", "Senior DS", "Staff DS", "Principal DS"], codes: ["L3", "L4", "L5", "L6", "L7"] },
+  "Design": { icon: "🎨", levels: ["Junior", "Designer", "Senior", "Staff", "Director"], codes: ["L3", "L4", "L5", "L6", "M1"] },
+  "Marketing": { icon: "📢", levels: ["Coordinator", "Manager", "Senior Mgr", "Director", "VP"], codes: ["L3", "L4", "L5", "M1", "M2"] },
+  "Sales": { icon: "💼", levels: ["SDR", "AE", "Senior AE", "Enterprise AE", "Director"], codes: ["L3", "L4", "L5", "L6", "M1"] },
+  "People / HR": { icon: "👥", levels: ["Coordinator", "Generalist", "HRBP", "Senior HRBP", "Director"], codes: ["L3", "L4", "L5", "L6", "M1"] },
+  "Operations": { icon: "⚙️", levels: ["Analyst", "Manager", "Senior Mgr", "Director", "VP"], codes: ["L3", "L4", "L5", "M1", "M2"] },
+  "Finance": { icon: "💰", levels: ["Analyst", "Senior Analyst", "Manager", "Director", "VP"], codes: ["L3", "L4", "L5", "M1", "M2"] },
+  "Customer Success": { icon: "🤝", levels: ["Associate", "CSM", "Senior CSM", "Manager", "Director"], codes: ["L3", "L4", "L5", "M1", "M2"] },
+  "Other": { icon: "📁", levels: ["Entry", "Mid", "Senior", "Lead", "Director"], codes: ["L3", "L4", "L5", "L6", "M1"] },
 };
 
 const METROS = [
-  { name: "San Francisco", state: "CA", cola: 1.35, region: "West" },
-  { name: "New York", state: "NY", cola: 1.28, region: "Northeast" },
-  { name: "Seattle", state: "WA", cola: 1.22, region: "West" },
-  { name: "Austin", state: "TX", cola: 1.05, region: "South" },
-  { name: "Denver", state: "CO", cola: 1.08, region: "West" },
-  { name: "Boston", state: "MA", cola: 1.20, region: "Northeast" },
-  { name: "Chicago", state: "IL", cola: 1.02, region: "Midwest" },
-  { name: "Los Angeles", state: "CA", cola: 1.25, region: "West" },
-  { name: "Miami", state: "FL", cola: 1.0, region: "South" },
-  { name: "Remote", state: "US", cola: 1.0, region: "National" },
-  { name: "Portland", state: "OR", cola: 1.10, region: "West" },
-  { name: "Atlanta", state: "GA", cola: 0.98, region: "South" },
-  { name: "Raleigh", state: "NC", cola: 0.95, region: "South" },
+  { name: "San Francisco", state: "CA", abbr: "SF" },
+  { name: "New York", state: "NY", abbr: "NYC" },
+  { name: "Seattle", state: "WA", abbr: "SEA" },
+  { name: "Austin", state: "TX", abbr: "AUS" },
+  { name: "Denver", state: "CO", abbr: "DEN" },
+  { name: "Boston", state: "MA", abbr: "BOS" },
+  { name: "Chicago", state: "IL", abbr: "CHI" },
+  { name: "Los Angeles", state: "CA", abbr: "LA" },
+  { name: "Remote", state: "US", abbr: "RMT" },
 ];
 
-// Utility functions
+// ============================================================================
+// UTILITIES
+// ============================================================================
+
+const fmt = n => n ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n) : "—";
+const fmtK = n => n ? "$" + Math.round(n / 1000) + "K" : "—";
+const fmtNum = n => new Intl.NumberFormat("en-US").format(n);
 const pct = (arr, p) => {
   if (!arr.length) return 0;
   const s = [...arr].sort((a, b) => a - b);
   const i = (p / 100) * (s.length - 1);
-  const l = Math.floor(i);
-  return l === Math.ceil(i) ? s[l] : s[l] + (s[Math.ceil(i)] - s[l]) * (i - l);
-};
-const fmt = n => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
-const fmtK = n => "$" + new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(n / 1000)) + "K";
-const fmtNum = n => new Intl.NumberFormat("en-US").format(n);
-const timeAgo = (date) => {
-  if (!date) return 'Never';
-  const now = new Date();
-  const then = new Date(date);
-  const diffMs = now - then;
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 30) return `${diffDays}d ago`;
-  return then.toLocaleDateString();
+  return Math.round(s[Math.floor(i)] + (s[Math.ceil(i)] - s[Math.floor(i)]) * (i - Math.floor(i)));
 };
 
-// Reusable components
-function Metric({ label, value, detail, accent = V.teal, delay = 0 }) {
+// ============================================================================
+// REUSABLE COMPONENTS
+// ============================================================================
+
+function Card({ children, className = "", padding = true, ...props }) {
   return (
-    <div className={`fade-up fade-up-${delay + 1}`} style={{ flex: "1 1 200px", minWidth: 180, padding: "20px 22px", background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, position: "relative", overflow: "hidden" }}>
-      <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: 2, background: accent, opacity: 0.5 }} />
-      <p style={{ fontSize: 11, fontWeight: 600, color: V.inkMuted, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>{label}</p>
-      <p style={{ fontSize: 26, fontWeight: 700, color: V.ink, marginTop: 6, fontFamily: "var(--font-display)", lineHeight: 1.1 }}>{value}</p>
-      {detail && <p style={{ fontSize: 12, color: V.inkFaint, marginTop: 6 }}>{detail}</p>}
+    <div 
+      style={{ 
+        background: V.surface, 
+        borderRadius: 12, 
+        border: `1px solid ${V.border}`,
+        padding: padding ? 20 : 0,
+        ...props.style 
+      }}
+      className={className}
+    >
+      {children}
     </div>
   );
 }
 
-function Pill({ children, active, onClick }) {
+function StatCard({ label, value, subtext, trend, icon }) {
   return (
-    <button onClick={onClick} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${active ? V.teal : V.border}`, background: active ? V.tealMuted : "transparent", color: active ? V.tealDark : V.inkMuted, fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: "var(--font-body)", whiteSpace: "nowrap", transition: "all 0.15s ease" }}>
+    <Card style={{ minWidth: 150, flex: "1 1 200px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <p style={{ fontSize: 12, fontWeight: 500, color: V.inkMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</p>
+          <p style={{ fontSize: 28, fontWeight: 700, color: V.ink, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{value}</p>
+          {subtext && <p style={{ fontSize: 12, color: V.inkFaint, marginTop: 4 }}>{subtext}</p>}
+        </div>
+        {icon && <span style={{ fontSize: 24, opacity: 0.6 }}>{icon}</span>}
+      </div>
+      {trend && (
+        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ color: trend > 0 ? V.green : V.rose, fontSize: 12, fontWeight: 600 }}>
+            {trend > 0 ? "↑" : "↓"} {Math.abs(trend)}%
+          </span>
+          <span style={{ color: V.inkFaint, fontSize: 11 }}>vs last month</span>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Button({ children, variant = "primary", size = "md", ...props }) {
+  const styles = {
+    primary: { background: V.primary, color: "#fff", border: "none" },
+    secondary: { background: V.surface, color: V.ink, border: `1px solid ${V.border}` },
+    ghost: { background: "transparent", color: V.inkMuted, border: "none" },
+  };
+  const sizes = {
+    sm: { padding: "6px 12px", fontSize: 12 },
+    md: { padding: "8px 16px", fontSize: 14 },
+    lg: { padding: "12px 24px", fontSize: 16 },
+  };
+  return (
+    <button
+      {...props}
+      style={{
+        ...styles[variant],
+        ...sizes[size],
+        borderRadius: 8,
+        fontWeight: 500,
+        cursor: "pointer",
+        transition: "all 0.15s ease",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        ...props.style,
+      }}
+    >
       {children}
     </button>
   );
 }
 
-function NavBtn({ children, active, onClick, icon, badge }) {
+function Select({ value, onChange, options, placeholder, ...props }) {
   return (
-    <button onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderRadius: 8, border: "none", width: "100%", textAlign: "left", background: active ? V.tealMuted : "transparent", color: active ? V.tealDark : V.inkSoft, fontSize: 13, fontWeight: active ? 600 : 450, cursor: "pointer", fontFamily: "var(--font-body)" }} onMouseEnter={e => { if (!active) e.currentTarget.style.background = V.surfaceMuted; }} onMouseLeave={e => { if (!active) e.currentTarget.style.background = active ? V.tealMuted : "transparent"; }}>
-      <span style={{ fontSize: 15, width: 22, textAlign: "center", opacity: active ? 1 : 0.6 }}>{icon}</span>
-      <span style={{ flex: 1 }}>{children}</span>
-      {badge && <span style={{ padding: "2px 6px", borderRadius: 4, background: V.teal, color: "#fff", fontSize: 10, fontWeight: 600 }}>{badge}</span>}
-    </button>
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      style={{
+        padding: "8px 32px 8px 12px",
+        borderRadius: 8,
+        border: `1px solid ${V.border}`,
+        background: V.surface,
+        color: V.ink,
+        fontSize: 14,
+        cursor: "pointer",
+        appearance: "none",
+        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748B' d='M3 4.5L6 7.5L9 4.5'/%3E%3C/svg%3E")`,
+        backgroundRepeat: "no-repeat",
+        backgroundPosition: "right 10px center",
+        minWidth: 140,
+        ...props.style,
+      }}
+    >
+      {placeholder && <option value="">{placeholder}</option>}
+      {options.map(opt => (
+        <option key={opt.value ?? opt} value={opt.value ?? opt}>{opt.label ?? opt}</option>
+      ))}
+    </select>
   );
 }
 
-function SourceTag({ source, showConfidence, confidence }) {
-  const colors = {
-    'Greenhouse': V.teal,
-    'Lever': V.blue,
-    'Ashby': V.violet,
-    'Workday': V.amber,
-    'H-1B Disclosure': '#059669',
-    'PERM Disclosure': '#059669',
-    'BLS OEWS': '#059669',
-    'SEC Proxy': '#059669',
-    'User Submission': V.rose,
-  };
-  const c = colors[source] || V.blue;
+function Tabs({ tabs, active, onChange }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-      <span style={{ padding: "2px 7px", borderRadius: 4, background: `${c}15`, color: c, fontSize: 10, fontWeight: 600, fontFamily: "var(--font-mono)" }}>{source || "Unknown"}</span>
-      {showConfidence && confidence && (
-        <span style={{ fontSize: 9, color: V.inkFaint }}>{confidence}%</span>
-      )}
-    </span>
-  );
-}
-
-// SearchBar component - isolated to prevent focus loss
-function SearchBar({ onSearch, onClear, hasActiveSearch }) {
-  const [value, setValue] = useState("");
-  
-  const handleSubmit = () => {
-    onSearch(value);
-  };
-  
-  const handleClear = () => {
-    setValue("");
-    onClear();
-  };
-  
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      onSearch(value);
-    }
-  };
-  
-  return (
-    <div style={{ display: "flex", gap: 0 }}>
-      <input 
-        type="text"
-        value={value} 
-        onChange={(e) => setValue(e.target.value)} 
-        onKeyDown={handleKeyDown}
-        placeholder="Search company, title, skill…" 
-        autoComplete="off" 
-        style={{ padding: "7px 14px", borderRadius: "7px 0 0 7px", border: `1px solid ${V.border}`, borderRight: "none", background: V.surface, color: V.ink, fontSize: 13, width: 200, fontFamily: "var(--font-body)" }} 
-      />
-      <button 
-        type="button"
-        onClick={handleSubmit}
-        style={{ padding: "7px 14px", borderRadius: "0 7px 7px 0", border: `1px solid ${V.teal}`, background: V.teal, color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-body)" }}
-      >
-        Search
-      </button>
-      {hasActiveSearch && (
-        <button 
-          type="button"
-          onClick={handleClear}
-          style={{ marginLeft: 6, padding: "7px 10px", borderRadius: 7, border: `1px solid ${V.border}`, background: "transparent", color: V.inkMuted, fontSize: 12, cursor: "pointer" }}
+    <div style={{ display: "flex", gap: 4, background: V.bgAlt, padding: 4, borderRadius: 10, overflow: "auto" }}>
+      {tabs.map(tab => (
+        <button
+          key={tab.key}
+          onClick={() => onChange(tab.key)}
+          style={{
+            padding: "8px 16px",
+            borderRadius: 8,
+            border: "none",
+            background: active === tab.key ? V.surface : "transparent",
+            color: active === tab.key ? V.ink : V.inkMuted,
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+            boxShadow: active === tab.key ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+            transition: "all 0.15s ease",
+          }}
         >
-          Clear
+          {tab.icon && <span style={{ marginRight: 6 }}>{tab.icon}</span>}
+          {tab.label}
+          {tab.badge && (
+            <span style={{ 
+              marginLeft: 6, 
+              padding: "2px 6px", 
+              borderRadius: 10, 
+              background: V.primary, 
+              color: "#fff", 
+              fontSize: 10, 
+              fontWeight: 600 
+            }}>
+              {tab.badge}
+            </span>
+          )}
         </button>
-      )}
+      ))}
     </div>
   );
 }
 
-function SortableTable({ data, columns, maxRows = 50 }) {
+function SearchInput({ value, onChange, onSearch, placeholder }) {
+  return (
+    <div style={{ display: "flex", gap: 0, flex: 1, maxWidth: 400 }}>
+      <input
+        type="text"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={e => e.key === "Enter" && onSearch()}
+        placeholder={placeholder}
+        style={{
+          flex: 1,
+          padding: "10px 14px",
+          borderRadius: "8px 0 0 8px",
+          border: `1px solid ${V.border}`,
+          borderRight: "none",
+          fontSize: 14,
+          minWidth: 0,
+        }}
+      />
+      <Button onClick={onSearch} style={{ borderRadius: "0 8px 8px 0" }}>Search</Button>
+    </div>
+  );
+}
+
+function DataTable({ data, columns, maxRows = 50 }) {
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("desc");
   
@@ -199,34 +284,47 @@ function SortableTable({ data, columns, maxRows = 50 }) {
     return [...data].sort((a, b) => {
       const va = a[sortKey], vb = b[sortKey];
       if (typeof va === "number") return sortDir === "asc" ? va - vb : vb - va;
-      return sortDir === "asc" ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+      return sortDir === "asc" ? String(va || "").localeCompare(String(vb || "")) : String(vb || "").localeCompare(String(va || ""));
     }).slice(0, maxRows);
   }, [data, sortKey, sortDir, maxRows]);
-  
-  const toggle = (k) => {
-    if (sortKey === k) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortKey(k); setSortDir("desc"); }
-  };
-  
+
   return (
     <div style={{ overflowX: "auto", borderRadius: 8, border: `1px solid ${V.border}` }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
-          <tr>
+          <tr style={{ background: V.bgAlt }}>
             {columns.map(col => (
-              <th key={col.key}>
-                <button onClick={() => toggle(col.key)} style={{ display: "flex", alignItems: "center", gap: 4, width: "100%", justifyContent: col.align === "right" ? "flex-end" : "flex-start", padding: "11px 14px", background: V.bgWarm, color: V.inkMuted, border: "none", borderBottom: `1px solid ${V.border}`, fontWeight: 600, fontSize: 11, letterSpacing: "0.04em", textTransform: "uppercase", cursor: "pointer", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
-                  {col.label}{sortKey === col.key && <span style={{ fontSize: 10 }}>{sortDir === "asc" ? " ↑" : " ↓"}</span>}
-                </button>
+              <th 
+                key={col.key} 
+                onClick={() => {
+                  if (sortKey === col.key) setSortDir(d => d === "asc" ? "desc" : "asc");
+                  else { setSortKey(col.key); setSortDir("desc"); }
+                }}
+                style={{ 
+                  padding: "12px 16px", 
+                  textAlign: col.align || "left", 
+                  fontWeight: 600, 
+                  fontSize: 11, 
+                  color: V.inkMuted,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  cursor: "pointer",
+                  userSelect: "none",
+                  whiteSpace: "nowrap",
+                  borderBottom: `1px solid ${V.border}`,
+                }}
+              >
+                {col.label}
+                {sortKey === col.key && <span style={{ marginLeft: 4 }}>{sortDir === "asc" ? "↑" : "↓"}</span>}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
           {sorted.map((row, i) => (
-            <tr key={row.id ?? i} style={{ borderBottom: `1px solid ${V.borderLight}` }} onMouseEnter={e => e.currentTarget.style.background = V.bgWarm} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+            <tr key={row.id ?? i} style={{ borderBottom: `1px solid ${V.borderLight}` }}>
               {columns.map(col => (
-                <td key={col.key} style={{ padding: "10px 14px", color: V.inkSoft, textAlign: col.align || "left", whiteSpace: "nowrap" }}>
+                <td key={col.key} style={{ padding: "12px 16px", color: V.inkSoft, textAlign: col.align || "left" }}>
                   {col.render ? col.render(row[col.key], row) : row[col.key]}
                 </td>
               ))}
@@ -235,121 +333,133 @@ function SortableTable({ data, columns, maxRows = 50 }) {
         </tbody>
       </table>
       {data.length > maxRows && (
-        <p style={{ padding: 12, textAlign: "center", color: V.inkFaint, fontSize: 12, background: V.bgWarm, margin: 0 }}>
-          Showing {fmtNum(maxRows)} of {fmtNum(data.length)} records
-        </p>
+        <div style={{ padding: 12, textAlign: "center", background: V.bgAlt, borderTop: `1px solid ${V.border}` }}>
+          <span style={{ fontSize: 12, color: V.inkMuted }}>Showing {maxRows} of {fmtNum(data.length)} records</span>
+        </div>
       )}
     </div>
   );
 }
 
-function BandBar({ min, max, p25, p50, p75, gMin, gMax }) {
-  const s = v => ((v - gMin) / (gMax - gMin)) * 100;
+function Badge({ children, color = V.primary }) {
   return (
-    <div style={{ position: "relative", height: 24, background: V.surfaceMuted, borderRadius: 4 }}>
-      <div style={{ position: "absolute", left: `${s(min)}%`, width: `${Math.max(s(max) - s(min), 1)}%`, top: 4, height: 16, background: V.tealMuted, borderRadius: 3, border: `1px solid ${V.teal}30` }} />
-      <div style={{ position: "absolute", left: `${s(p25)}%`, top: 3, width: 2, height: 18, background: V.blue, borderRadius: 1 }} />
-      <div style={{ position: "absolute", left: `${s(p50)}%`, top: 1, width: 3, height: 22, background: V.teal, borderRadius: 1 }} />
-      <div style={{ position: "absolute", left: `${s(p75)}%`, top: 3, width: 2, height: 18, background: V.amber, borderRadius: 1 }} />
+    <span style={{
+      padding: "3px 8px",
+      borderRadius: 6,
+      background: `${color}15`,
+      color: color,
+      fontSize: 11,
+      fontWeight: 600,
+    }}>
+      {children}
+    </span>
+  );
+}
+
+function BandVisualization({ data, globalMin, globalMax }) {
+  const scale = v => ((v - globalMin) / (globalMax - globalMin)) * 100;
+  return (
+    <div style={{ position: "relative", height: 28, background: V.bgAlt, borderRadius: 6 }}>
+      {/* Range bar */}
+      <div style={{
+        position: "absolute",
+        left: `${scale(data.p10)}%`,
+        width: `${scale(data.p90) - scale(data.p10)}%`,
+        top: 8,
+        height: 12,
+        background: V.primaryMuted,
+        borderRadius: 4,
+      }} />
+      {/* IQR */}
+      <div style={{
+        position: "absolute",
+        left: `${scale(data.p25)}%`,
+        width: `${scale(data.p75) - scale(data.p25)}%`,
+        top: 6,
+        height: 16,
+        background: `${V.primary}40`,
+        borderRadius: 4,
+      }} />
+      {/* Median */}
+      <div style={{
+        position: "absolute",
+        left: `${scale(data.p50)}%`,
+        top: 2,
+        width: 3,
+        height: 24,
+        background: V.primary,
+        borderRadius: 2,
+        transform: "translateX(-50%)",
+      }} />
     </div>
   );
 }
 
-const chartTooltipStyle = { background: V.surface, border: `1px solid ${V.border}`, borderRadius: 8, fontSize: 12, fontFamily: "var(--font-body)", boxShadow: "0 4px 12px rgba(0,0,0,0.06)" };
-
 // ============================================================================
-// MAIN APP COMPONENT
+// MAIN APP
 // ============================================================================
 
 export default function Banded() {
-  const [tab, setTab] = useState("dashboard");
+  // State
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dataSource, setDataSource] = useState("loading");
   const [submissions, setSubmissions] = useState([]);
-  const [dataSources, setDataSources] = useState([]);
-  const [sourceStats, setSourceStats] = useState({});
+  const [tab, setTab] = useState("overview");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // Filters
-  const [famF, setFamF] = useState("All");
-  const [metF, setMetF] = useState("All");
-  const [sizeF, setSizeF] = useState("All");
-  const [lvlF, setLvlF] = useState("All");
-  const [q, setQ] = useState("");
-  const [bandFam, setBandFam] = useState("Software Engineering");
-  const [bandMet, setBandMet] = useState("All");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [familyFilter, setFamilyFilter] = useState("All");
+  const [metroFilter, setMetroFilter] = useState("All");
+  const [levelFilter, setLevelFilter] = useState("All");
   
-  // Admin mode
+  // Band Builder
+  const [bandFamily, setBandFamily] = useState("Software Engineering");
+  const [bandMetro, setBandMetro] = useState("All");
+  
+  // Admin
   const [isAdmin, setIsAdmin] = useState(false);
   
+  // Check admin
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setIsAdmin(params.get('admin') === 'true');
   }, []);
 
-  // Fetch main comp data
+  // Fetch data
   useEffect(() => {
     async function fetchData() {
-      setLoading(true);
       try {
         const { data: compData, error } = await supabase
           .from('comp_data')
           .select('*')
-          .eq('status', 'approved')
-          .order('scraped_at', { ascending: false })
+          .order('id', { ascending: false })
           .limit(10000);
         
-        if (error) throw error;
-        
-        if (compData && compData.length > 0) {
+        if (!error && compData?.length > 0) {
           const transformed = compData.map(r => ({
             id: r.id,
             company: r.company,
-            size: r.size,
-            industry: r.industry,
-            family: r.family,
             title: r.title,
-            code: r.code,
-            level: r.level,
+            family: r.family || "Other",
             metro: r.metro,
             state: r.state,
-            region: r.region,
             sMin: r.salary_min,
             sMax: r.salary_max,
             mid: r.midpoint,
-            work: r.work_model,
-            skills: r.skills || [],
             source: r.source,
-            posted: r.posted_date,
-            scrapedAt: r.scraped_at,
-            confidence: r.confidence_score || 80,
-            jobUrl: r.job_url,
+            status: r.status,
           }));
           setData(transformed);
           setDataSource("database");
-          
-          // Calculate source stats
-          const stats = {};
-          transformed.forEach(r => {
-            if (!stats[r.source]) {
-              stats[r.source] = { count: 0, latestDate: null, avgConfidence: 0, confidenceSum: 0 };
-            }
-            stats[r.source].count++;
-            stats[r.source].confidenceSum += (r.confidence || 80);
-            if (!stats[r.source].latestDate || new Date(r.scrapedAt) > new Date(stats[r.source].latestDate)) {
-              stats[r.source].latestDate = r.scrapedAt;
-            }
-          });
-          Object.keys(stats).forEach(k => {
-            stats[k].avgConfidence = Math.round(stats[k].confidenceSum / stats[k].count);
-          });
-          setSourceStats(stats);
         } else {
           setData([]);
           setDataSource("empty");
         }
       } catch (err) {
-        console.error("Error fetching from Supabase:", err);
+        console.error("Fetch error:", err);
         setData([]);
         setDataSource("error");
       }
@@ -358,167 +468,177 @@ export default function Banded() {
     fetchData();
   }, []);
 
-  // Fetch data sources health
-  useEffect(() => {
-    async function fetchSources() {
-      try {
-        const { data: sources, error } = await supabase
-          .from('data_sources')
-          .select('*')
-          .order('source_name');
-        
-        if (!error && sources) {
-          setDataSources(sources);
-        }
-      } catch (err) {
-        console.error("Error fetching sources:", err);
-      }
-    }
-    fetchSources();
-  }, []);
-
   // Fetch submissions for admin
   useEffect(() => {
     if (!isAdmin) return;
     async function fetchSubmissions() {
-      const { data: subs, error } = await supabase
+      const { data: subs } = await supabase
         .from('submissions')
         .select('*')
         .order('submitted_at', { ascending: false });
-      if (!error && subs) setSubmissions(subs);
+      if (subs) setSubmissions(subs);
     }
     fetchSubmissions();
   }, [isAdmin, tab]);
 
-  // Derived data
-  const filtered = useMemo(() => data.filter(r => {
-    if (famF !== "All" && r.family !== famF) return false;
-    if (metF !== "All" && r.metro !== metF) return false;
-    if (sizeF !== "All" && r.size !== sizeF) return false;
-    if (lvlF !== "All" && r.code !== lvlF) return false;
-    if (q) {
-      const lq = q.toLowerCase();
-      return r.company?.toLowerCase().includes(lq) || r.title?.toLowerCase().includes(lq) || (r.skills || []).some(s => s.toLowerCase().includes(lq));
-    }
-    return true;
-  }), [data, famF, metF, sizeF, lvlF, q]);
+  // Filtered data
+  const filtered = useMemo(() => {
+    return data.filter(r => {
+      if (familyFilter !== "All" && r.family !== familyFilter) return false;
+      if (metroFilter !== "All" && r.metro !== metroFilter) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        return r.company?.toLowerCase().includes(q) || r.title?.toLowerCase().includes(q);
+      }
+      return true;
+    });
+  }, [data, familyFilter, metroFilter, searchQuery]);
 
+  // Stats
   const stats = useMemo(() => {
-    if (!filtered.length) return { med: 0, p25: 0, p75: 0, p90: 0, n: 0, cos: 0, sources: 0 };
-    const m = filtered.map(r => r.mid).filter(x => x);
-    const uniqueSources = new Set(filtered.map(r => r.source));
+    const mids = filtered.map(r => r.mid).filter(Boolean);
+    const families = [...new Set(filtered.map(r => r.family))];
+    const companies = [...new Set(filtered.map(r => r.company))];
+    const sources = [...new Set(data.map(r => r.source))];
     return {
-      med: pct(m, 50),
-      p25: pct(m, 25),
-      p75: pct(m, 75),
-      p90: pct(m, 90),
-      n: filtered.length,
-      cos: new Set(filtered.map(r => r.company)).size,
-      sources: uniqueSources.size,
+      count: filtered.length,
+      totalRecords: data.length,
+      median: pct(mids, 50),
+      p25: pct(mids, 25),
+      p75: pct(mids, 75),
+      p90: pct(mids, 90),
+      familyCount: families.length,
+      companyCount: companies.length,
+      sourceCount: sources.length,
     };
-  }, [filtered]);
+  }, [filtered, data]);
 
-  const geoData = useMemo(() => {
-    const bm = {};
+  // Charts data
+  const familyStats = useMemo(() => {
+    const byFamily = {};
     filtered.forEach(r => {
-      if (!r.metro) return;
-      if (!bm[r.metro]) bm[r.metro] = { mids: [], n: 0, state: r.state, region: r.region };
+      if (!byFamily[r.family]) byFamily[r.family] = { mids: [], count: 0 };
       if (r.mid) {
-        bm[r.metro].mids.push(r.mid);
-        bm[r.metro].n++;
+        byFamily[r.family].mids.push(r.mid);
+        byFamily[r.family].count++;
       }
     });
-    return Object.entries(bm)
-      .filter(([_, d]) => d.mids.length > 0)
-      .map(([metro, d]) => ({
-        metro,
-        state: d.state,
-        region: d.region,
-        median: Math.round(pct(d.mids, 50)),
-        p25: Math.round(pct(d.mids, 25)),
-        p75: Math.round(pct(d.mids, 75)),
-        postings: d.n
+    return Object.entries(byFamily)
+      .map(([family, d]) => ({
+        family,
+        icon: JOB_FAMILIES[family]?.icon || "📁",
+        median: pct(d.mids, 50),
+        p25: pct(d.mids, 25),
+        p75: pct(d.mids, 75),
+        count: d.count,
       }))
+      .filter(d => d.count > 0)
       .sort((a, b) => b.median - a.median);
   }, [filtered]);
 
-  const sourceBreakdown = useMemo(() => {
-    const counts = {};
-    data.forEach(r => {
-      const src = r.source || 'Unknown';
-      counts[src] = (counts[src] || 0) + 1;
+  const metroStats = useMemo(() => {
+    const byMetro = {};
+    filtered.forEach(r => {
+      if (!r.metro) return;
+      if (!byMetro[r.metro]) byMetro[r.metro] = { mids: [], count: 0 };
+      if (r.mid) {
+        byMetro[r.metro].mids.push(r.mid);
+        byMetro[r.metro].count++;
+      }
     });
+    return Object.entries(byMetro)
+      .map(([metro, d]) => ({
+        metro,
+        median: pct(d.mids, 50),
+        count: d.count,
+      }))
+      .filter(d => d.count > 0)
+      .sort((a, b) => b.median - a.median);
+  }, [filtered]);
+
+  const sourceStats = useMemo(() => {
+    const counts = {};
+    data.forEach(r => { counts[r.source] = (counts[r.source] || 0) + 1; });
     return Object.entries(counts)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
   }, [data]);
 
-  const bandRows = useMemo(() => {
-    const cfg = JOB_FAMILIES[bandFam];
-    if (!cfg) return [];
-    return cfg.levels.map((lv, i) => {
-      const mx = data.filter(r => r.family === bandFam && r.title === lv && (bandMet === "All" || r.metro === bandMet));
-      if (!mx.length) {
-        const bM = cfg.base[0] + (cfg.base[1] - cfg.base[0]) * (i / (cfg.levels.length - 1)) * 0.7;
-        const m = bM * 1.1;
-        return { level: lv, code: cfg.codes[i], p25: Math.round(m * .88), p50: Math.round(m), p75: Math.round(m * 1.15), p90: Math.round(m * 1.3), min: Math.round(m * .82), max: Math.round(m * 1.35), n: 0 };
+  // Band builder data
+  const bandData = useMemo(() => {
+    const config = JOB_FAMILIES[bandFamily];
+    if (!config) return [];
+    
+    // Get all relevant data
+    const relevant = data.filter(r => 
+      r.family === bandFamily && 
+      (bandMetro === "All" || r.metro === bandMetro)
+    );
+    
+    const mids = relevant.map(r => r.mid).filter(Boolean);
+    if (!mids.length) return [];
+    
+    const globalMin = Math.min(...mids) * 0.9;
+    const globalMax = Math.max(...mids) * 1.1;
+    
+    // Group by rough level based on title keywords
+    const levels = config.levels.map((level, i) => {
+      const levelMids = relevant
+        .filter(r => r.title?.toLowerCase().includes(level.toLowerCase().split(" ")[0]))
+        .map(r => r.mid)
+        .filter(Boolean);
+      
+      if (levelMids.length < 3) {
+        // Estimate based on position in ladder
+        const ratio = i / (config.levels.length - 1);
+        const estMedian = globalMin + (globalMax - globalMin) * ratio;
+        return {
+          level,
+          code: config.codes[i],
+          p10: Math.round(estMedian * 0.85),
+          p25: Math.round(estMedian * 0.92),
+          p50: Math.round(estMedian),
+          p75: Math.round(estMedian * 1.08),
+          p90: Math.round(estMedian * 1.15),
+          n: 0,
+          estimated: true,
+        };
       }
-      const ms = mx.map(r => r.mid).filter(x => x);
+      
       return {
-        level: lv,
-        code: cfg.codes[i],
-        p25: Math.round(pct(ms, 25)),
-        p50: Math.round(pct(ms, 50)),
-        p75: Math.round(pct(ms, 75)),
-        p90: Math.round(pct(ms, 90)),
-        min: Math.round(pct(ms, 10)),
-        max: Math.round(pct(ms, 90)),
-        n: mx.length
+        level,
+        code: config.codes[i],
+        p10: pct(levelMids, 10),
+        p25: pct(levelMids, 25),
+        p50: pct(levelMids, 50),
+        p75: pct(levelMids, 75),
+        p90: pct(levelMids, 90),
+        n: levelMids.length,
+        estimated: false,
       };
     });
-  }, [data, bandFam, bandMet]);
+    
+    return { levels, globalMin, globalMax };
+  }, [data, bandFamily, bandMetro]);
 
-  // Navigation pages
+  // Navigation
   const pendingCount = submissions.filter(s => s.status === 'pending').length;
-  const pages = [
-    { key: "dashboard", label: "Dashboard", icon: "◉" },
-    { key: "explore", label: "Explore", icon: "⬡" },
-    { key: "bands", label: "Band Builder", icon: "▤" },
-    { key: "sources", label: "Data Sources", icon: "◈" },
-    { key: "contribute", label: "Contribute", icon: "✦" },
-    ...(isAdmin ? [{ key: "admin", label: "Admin Review", icon: "⚙", badge: pendingCount > 0 ? pendingCount : null }] : []),
+  const tabs = [
+    { key: "overview", label: "Overview", icon: "📊" },
+    { key: "explore", label: "Explore Data", icon: "🔍" },
+    { key: "bands", label: "Band Builder", icon: "📈" },
+    { key: "compare", label: "Compare", icon: "⚖️" },
+    { key: "contribute", label: "Contribute", icon: "➕" },
+    ...(isAdmin ? [{ key: "admin", label: "Admin", icon: "⚙️", badge: pendingCount || null }] : []),
   ];
 
-  // Search is handled by SearchBar component
-  
-  const filterBarContent = (
-    <div className="fade-up fade-up-1" style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <SearchBar 
-          onSearch={(term) => setQ(term)} 
-          onClear={() => setQ("")} 
-          hasActiveSearch={!!q} 
-        />
-        <span style={{ width: 1, height: 20, background: V.border }} />
-        <span style={{ fontSize: 10, color: V.inkFaint, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Family</span>
-        <Pill active={famF === "All"} onClick={() => setFamF("All")}>All</Pill>
-        {Object.keys(JOB_FAMILIES).map(f => <Pill key={f} active={famF === f} onClick={() => setFamF(f)}>{f}</Pill>)}
-      </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 10, color: V.inkFaint, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "var(--font-mono)", minWidth: 44 }}>Metro</span>
-        <Pill active={metF === "All"} onClick={() => setMetF("All")}>All</Pill>
-        {["San Francisco", "New York", "Seattle", "Denver", "Austin", "Boston", "Chicago", "Los Angeles", "Remote"].map(m => <Pill key={m} active={metF === m} onClick={() => setMetF(m)}>{m}</Pill>)}
-      </div>
-    </div>
-  );
-
-  // Loading state
+  // Loading
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", background: V.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: V.bg }}>
         <div style={{ textAlign: "center" }}>
-          <div style={{ width: 40, height: 40, border: `3px solid ${V.border}`, borderTopColor: V.teal, borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 16px" }} />
-          <p style={{ color: V.inkMuted, fontSize: 14 }}>Loading compensation data...</p>
+          <div style={{ width: 40, height: 40, border: `3px solid ${V.border}`, borderTopColor: V.primary, borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 16px" }} />
+          <p style={{ color: V.inkMuted }}>Loading compensation data...</p>
         </div>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
@@ -526,421 +646,395 @@ export default function Banded() {
   }
 
   // ============================================================================
-  // PAGE COMPONENTS
+  // PAGES
   // ============================================================================
 
-  const Dashboard = () => (
+  const Overview = () => (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      {dataSource === "empty" && (
-        <div style={{ padding: "14px 18px", background: V.amberMuted, border: `1px solid ${V.amber}30`, borderRadius: 8 }}>
-          <p style={{ margin: 0, fontSize: 13, color: V.amber }}>📊 No data yet. Run your scrapers or add data via the Contribute page.</p>
-        </div>
-      )}
-      {filterBarContent}
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-        <Metric label="Median Comp" value={stats.med ? fmtK(stats.med) : "—"} detail={stats.med ? `P25: ${fmtK(stats.p25)} · P75: ${fmtK(stats.p75)}` : "No data"} delay={0} />
-        <Metric label="Data Points" value={fmtNum(stats.n)} detail={`${fmtNum(stats.cos)} companies`} accent={V.blue} delay={1} />
-        <Metric label="Data Sources" value={stats.sources} detail={`${sourceBreakdown.length} active`} accent={V.violet} delay={2} />
-        <Metric label="90th Percentile" value={stats.p90 ? fmtK(stats.p90) : "—"} detail="Top-of-market" accent={V.amber} delay={3} />
+      {/* Stats row */}
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <StatCard label="Total Records" value={fmtNum(stats.totalRecords)} subtext={`${stats.companyCount} companies`} icon="📊" />
+        <StatCard label="Median Salary" value={fmtK(stats.median)} subtext={`P25: ${fmtK(stats.p25)} · P75: ${fmtK(stats.p75)}`} icon="💰" />
+        <StatCard label="Job Families" value={stats.familyCount} subtext="Tracked" icon="📁" />
+        <StatCard label="Data Sources" value={stats.sourceCount} subtext="Active" icon="🔗" />
       </div>
-      
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14 }}>
-        <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink }}>Pay by Metro</h3>
-          <p style={{ fontSize: 11, color: V.inkFaint, marginTop: 2, marginBottom: 16 }}>Median total comp</p>
-          {geoData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={270}>
-              <BarChart data={geoData.slice(0, 8)} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke={V.borderLight} />
-                <XAxis type="number" tick={{ fill: V.inkFaint, fontSize: 11 }} tickFormatter={v => fmtK(v)} axisLine={{ stroke: V.border }} />
-                <YAxis type="category" dataKey="metro" tick={{ fill: V.inkMuted, fontSize: 11 }} width={100} axisLine={{ stroke: V.border }} />
-                <Tooltip contentStyle={chartTooltipStyle} formatter={v => fmt(v)} />
-                <Bar dataKey="median" fill={V.teal} radius={[0, 4, 4, 0]} barSize={16} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div style={{ height: 270, display: "flex", alignItems: "center", justifyContent: "center", color: V.inkFaint }}>No geographic data available</div>
-          )}
-        </section>
-        
-        <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink }}>Data by Source</h3>
-          <p style={{ fontSize: 11, color: V.inkFaint, marginTop: 2, marginBottom: 16 }}>Record distribution</p>
-          {sourceBreakdown.length > 0 ? (
-            <ResponsiveContainer width="100%" height={270}>
+
+      {/* Charts */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 16 }}>
+        <Card>
+          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Salary by Job Family</h3>
+          <p style={{ fontSize: 12, color: V.inkMuted, marginBottom: 16 }}>Median total compensation</p>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={familyStats.slice(0, 8)} layout="vertical" margin={{ left: 10, right: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={V.border} />
+              <XAxis type="number" tickFormatter={v => fmtK(v)} tick={{ fill: V.inkMuted, fontSize: 11 }} />
+              <YAxis type="category" dataKey="family" width={130} tick={{ fill: V.inkSoft, fontSize: 12 }} />
+              <Tooltip 
+                formatter={v => fmt(v)} 
+                contentStyle={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 8, fontSize: 13 }} 
+              />
+              <Bar dataKey="median" fill={V.primary} radius={[0, 4, 4, 0]} barSize={20} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+
+        <Card>
+          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Salary by Metro</h3>
+          <p style={{ fontSize: 12, color: V.inkMuted, marginBottom: 16 }}>Top markets by median pay</p>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={metroStats.slice(0, 8)} layout="vertical" margin={{ left: 10, right: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={V.border} />
+              <XAxis type="number" tickFormatter={v => fmtK(v)} tick={{ fill: V.inkMuted, fontSize: 11 }} />
+              <YAxis type="category" dataKey="metro" width={100} tick={{ fill: V.inkSoft, fontSize: 12 }} />
+              <Tooltip 
+                formatter={v => fmt(v)} 
+                contentStyle={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 8, fontSize: 13 }} 
+              />
+              <Bar dataKey="median" fill={V.blue} radius={[0, 4, 4, 0]} barSize={20} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      </div>
+
+      {/* Data sources */}
+      <Card>
+        <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Data Sources</h3>
+        <p style={{ fontSize: 12, color: V.inkMuted, marginBottom: 16 }}>Record distribution by source</p>
+        <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 200px", minWidth: 200 }}>
+            <ResponsiveContainer width="100%" height={180}>
               <PieChart>
-                <Pie data={sourceBreakdown.slice(0, 6)} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name.split(' ')[0]} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                  {sourceBreakdown.slice(0, 6).map((_, i) => <Cell key={i} fill={V.chartSet[i % V.chartSet.length]} />)}
+                <Pie data={sourceStats.slice(0, 6)} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} innerRadius={40}>
+                  {sourceStats.slice(0, 6).map((_, i) => <Cell key={i} fill={V.chartColors[i % V.chartColors.length]} />)}
                 </Pie>
-                <Tooltip contentStyle={chartTooltipStyle} formatter={v => fmtNum(v)} />
+                <Tooltip contentStyle={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 8, fontSize: 13 }} />
               </PieChart>
             </ResponsiveContainer>
-          ) : (
-            <div style={{ height: 270, display: "flex", alignItems: "center", justifyContent: "center", color: V.inkFaint }}>No source data available</div>
-          )}
-        </section>
-      </div>
+          </div>
+          <div style={{ flex: "2 1 300px", display: "flex", flexDirection: "column", gap: 8 }}>
+            {sourceStats.slice(0, 6).map((s, i) => (
+              <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 12, height: 12, borderRadius: 3, background: V.chartColors[i % V.chartColors.length] }} />
+                <span style={{ flex: 1, fontSize: 13, color: V.inkSoft }}>{s.name}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: V.ink, fontVariantNumeric: "tabular-nums" }}>{fmtNum(s.value)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Card>
     </div>
   );
 
   const Explore = () => (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {filterBarContent}
-      <p style={{ fontSize: 13, color: V.inkMuted, margin: 0 }}><strong style={{ color: V.teal }}>{fmtNum(filtered.length)}</strong> records</p>
-      <SortableTable data={filtered} maxRows={100} columns={[
-        { key: "company", label: "Company", render: (v, r) => <span><strong style={{ color: V.ink }}>{v}</strong></span> },
-        { key: "title", label: "Title" },
-        { key: "code", label: "Level", align: "center", render: v => <span className="mono" style={{ fontSize: 11, color: V.blue, fontWeight: 600 }}>{v}</span> },
-        { key: "metro", label: "Metro" },
-        { key: "mid", label: "Midpoint", align: "right", render: v => <span className="mono" style={{ color: V.tealDark, fontWeight: 600 }}>{v ? fmt(v) : "—"}</span> },
-        { key: "source", label: "Source", render: (v, r) => <SourceTag source={v} showConfidence confidence={r.confidence} /> },
-        { key: "scrapedAt", label: "Added", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{timeAgo(v)}</span> },
-      ]} />
+      {/* Filters */}
+      <Card padding={false} style={{ padding: "16px 20px" }}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <SearchInput 
+            value={searchTerm} 
+            onChange={setSearchTerm} 
+            onSearch={() => setSearchQuery(searchTerm)}
+            placeholder="Search company or title..."
+          />
+          <Select 
+            value={familyFilter} 
+            onChange={setFamilyFilter} 
+            options={["All", ...Object.keys(JOB_FAMILIES)]} 
+          />
+          <Select 
+            value={metroFilter} 
+            onChange={setMetroFilter} 
+            options={["All", ...METROS.map(m => m.name)]} 
+          />
+          {(searchQuery || familyFilter !== "All" || metroFilter !== "All") && (
+            <Button variant="ghost" onClick={() => { setSearchTerm(""); setSearchQuery(""); setFamilyFilter("All"); setMetroFilter("All"); }}>
+              Clear filters
+            </Button>
+          )}
+        </div>
+      </Card>
+
+      {/* Results count */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <p style={{ fontSize: 14, color: V.inkMuted }}>
+          <strong style={{ color: V.ink }}>{fmtNum(filtered.length)}</strong> records
+          {filtered.length !== data.length && ` (filtered from ${fmtNum(data.length)})`}
+        </p>
+      </div>
+
+      {/* Table */}
+      <DataTable 
+        data={filtered} 
+        maxRows={100}
+        columns={[
+          { key: "company", label: "Company", render: v => <strong style={{ color: V.ink }}>{v}</strong> },
+          { key: "title", label: "Title" },
+          { key: "family", label: "Family", render: v => <Badge color={V.primary}>{v}</Badge> },
+          { key: "metro", label: "Metro" },
+          { key: "mid", label: "Midpoint", align: "right", render: v => <span style={{ fontWeight: 600, color: V.primary, fontVariantNumeric: "tabular-nums" }}>{fmt(v)}</span> },
+          { key: "source", label: "Source", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{v}</span> },
+        ]}
+      />
     </div>
   );
 
-  const Bands = () => {
-    const gMin = Math.min(...bandRows.map(d => d.min));
-    const gMax = Math.max(...bandRows.map(d => d.max));
+  const BandBuilder = () => {
+    const { levels = [], globalMin = 50000, globalMax = 500000 } = bandData;
+    
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-        <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 28 }}>
-          <h2 style={{ fontSize: 22, fontWeight: 400, color: V.ink, fontFamily: "var(--font-display)" }}>Salary Band Builder</h2>
-          <p style={{ fontSize: 13, color: V.inkMuted, marginTop: 4, marginBottom: 22 }}>Build market-based salary bands from aggregated data.</p>
-          <div style={{ display: "flex", gap: 16, marginBottom: 28 }}>
+        <Card>
+          <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Salary Band Builder</h3>
+          <p style={{ fontSize: 13, color: V.inkMuted, marginBottom: 20 }}>
+            Build market-based salary bands from aggregated compensation data. Great for benchmarking your company's pay ranges.
+          </p>
+          
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
             <div>
-              <label style={{ display: "block", fontSize: 10, color: V.inkFaint, marginBottom: 5, fontWeight: 600, textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Job Family</label>
-              <select value={bandFam} onChange={e => setBandFam(e.target.value)} style={{ padding: "8px 12px", borderRadius: 7, border: `1px solid ${V.border}`, background: V.surface, color: V.ink, fontSize: 13, minWidth: 200 }}>{Object.keys(JOB_FAMILIES).map(f => <option key={f} value={f}>{f}</option>)}</select>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: V.inkMuted, marginBottom: 6 }}>Job Family</label>
+              <Select value={bandFamily} onChange={setBandFamily} options={Object.keys(JOB_FAMILIES)} />
             </div>
             <div>
-              <label style={{ display: "block", fontSize: 10, color: V.inkFaint, marginBottom: 5, fontWeight: 600, textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Geography</label>
-              <select value={bandMet} onChange={e => setBandMet(e.target.value)} style={{ padding: "8px 12px", borderRadius: 7, border: `1px solid ${V.border}`, background: V.surface, color: V.ink, fontSize: 13, minWidth: 200 }}><option value="All">All Markets</option>{METROS.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}</select>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: V.inkMuted, marginBottom: 6 }}>Geography</label>
+              <Select value={bandMetro} onChange={setBandMetro} options={["All", ...METROS.map(m => m.name)]} />
             </div>
           </div>
-          {bandRows.map((b, i) => (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "150px 50px 1fr 70px 70px 70px 50px", gap: 10, alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${V.borderLight}` }}>
-              <span style={{ color: V.ink, fontWeight: 600, fontSize: 13 }}>{b.level}</span>
-              <span className="mono" style={{ fontSize: 11, color: V.blue }}>{b.code}</span>
-              <BandBar min={b.min} max={b.max} p25={b.p25} p50={b.p50} p75={b.p75} gMin={gMin || 50000} gMax={gMax || 500000} />
-              <span className="mono" style={{ fontSize: 12, color: V.inkMuted, textAlign: "right" }}>{fmtK(b.p25)}</span>
-              <span className="mono" style={{ fontSize: 12, color: V.tealDark, textAlign: "right", fontWeight: 600 }}>{fmtK(b.p50)}</span>
-              <span className="mono" style={{ fontSize: 12, color: V.inkMuted, textAlign: "right" }}>{fmtK(b.p75)}</span>
-              <span style={{ fontSize: 10, color: V.inkFaint, textAlign: "right" }}>n={b.n}</span>
-            </div>
-          ))}
-        </section>
+
+          {/* Legend */}
+          <div style={{ display: "flex", gap: 16, marginBottom: 16, fontSize: 11, color: V.inkMuted }}>
+            <span>◼︎ P25-P75 (IQR)</span>
+            <span>│ Median</span>
+            <span style={{ opacity: 0.5 }}>◼︎ P10-P90 Range</span>
+          </div>
+
+          {/* Bands */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {levels.map((lvl, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "140px 50px 1fr 80px 80px 80px 40px", gap: 12, alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${V.borderLight}` }}>
+                <span style={{ fontWeight: 500, color: V.ink, fontSize: 13 }}>{lvl.level}</span>
+                <span style={{ fontSize: 11, color: V.blue, fontWeight: 600 }}>{lvl.code}</span>
+                <BandVisualization data={lvl} globalMin={globalMin} globalMax={globalMax} />
+                <span style={{ fontSize: 12, color: V.inkMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtK(lvl.p25)}</span>
+                <span style={{ fontSize: 13, color: V.primary, fontWeight: 600, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtK(lvl.p50)}</span>
+                <span style={{ fontSize: 12, color: V.inkMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtK(lvl.p75)}</span>
+                <span style={{ fontSize: 10, color: V.inkFaint, textAlign: "right" }}>{lvl.estimated ? "est" : `n=${lvl.n}`}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card>
+          <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>How to use this data</h4>
+          <ul style={{ fontSize: 13, color: V.inkMuted, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 6 }}>
+            <li><strong>For job seekers:</strong> Use median (P50) as your target, P75 for strong negotiation</li>
+            <li><strong>For comp teams:</strong> P25-P75 represents the competitive range for most roles</li>
+            <li><strong>For planning:</strong> P10-P90 shows the full market spread including outliers</li>
+          </ul>
+        </Card>
       </div>
     );
   };
 
-  const DataSources = () => {
-    const sourceList = Object.entries(sourceStats).map(([name, stats]) => ({
-      name,
-      count: stats.count,
-      lastUpdate: stats.latestDate,
-      avgConfidence: stats.avgConfidence,
-    })).sort((a, b) => b.count - a.count);
+  const Compare = () => {
+    const [role1, setRole1] = useState({ family: "Software Engineering", metro: "San Francisco" });
+    const [role2, setRole2] = useState({ family: "Software Engineering", metro: "Remote" });
+
+    const getStats = (family, metro) => {
+      const relevant = data.filter(r => r.family === family && (metro === "All" || r.metro === metro));
+      const mids = relevant.map(r => r.mid).filter(Boolean);
+      return {
+        count: relevant.length,
+        median: pct(mids, 50),
+        p25: pct(mids, 25),
+        p75: pct(mids, 75),
+      };
+    };
+
+    const stats1 = getStats(role1.family, role1.metro);
+    const stats2 = getStats(role2.family, role2.metro);
+    const diff = stats1.median && stats2.median ? ((stats1.median - stats2.median) / stats2.median * 100).toFixed(1) : 0;
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-          <Metric label="Total Sources" value={sourceList.length} detail="Active data pipelines" />
-          <Metric label="Total Records" value={fmtNum(data.length)} detail="In database" accent={V.blue} delay={1} />
-          <Metric label="Avg Confidence" value={`${Math.round(sourceList.reduce((a, s) => a + s.avgConfidence, 0) / sourceList.length || 0)}%`} detail="Data quality score" accent={V.teal} delay={2} />
-        </div>
-        
-        <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 16 }}>Source Health</h3>
-          <SortableTable data={sourceList} columns={[
-            { key: "name", label: "Source", render: v => <SourceTag source={v} /> },
-            { key: "count", label: "Records", align: "right", render: v => <span className="mono">{fmtNum(v)}</span> },
-            { key: "avgConfidence", label: "Confidence", align: "right", render: v => {
-              const c = v >= 80 ? V.teal : v >= 60 ? V.amber : V.rose;
-              return (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
-                  <div style={{ width: 50, height: 5, background: V.surfaceMuted, borderRadius: 3, overflow: "hidden" }}>
-                    <div style={{ width: `${v}%`, height: "100%", background: c, borderRadius: 3 }} />
-                  </div>
-                  <span className="mono" style={{ fontSize: 11, color: c, fontWeight: 600, width: 35 }}>{v}%</span>
-                </div>
-              );
-            }},
-            { key: "lastUpdate", label: "Last Update", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{timeAgo(v)}</span> },
-          ]} />
-        </section>
-        
-        <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 8 }}>About Data Quality</h3>
-          <p style={{ fontSize: 13, color: V.inkMuted, lineHeight: 1.6, margin: 0 }}>
-            Confidence scores reflect data reliability. Government sources (H-1B, BLS) score highest (90-100%) as they contain verified salary data. 
-            Job board postings (Greenhouse, Lever) score 70-85% based on salary range completeness. 
-            User submissions start at 70% and increase after verification.
+        <Card>
+          <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Compare Compensation</h3>
+          <p style={{ fontSize: 13, color: V.inkMuted, marginBottom: 20 }}>
+            Compare salaries across job families and locations. Useful for relocation decisions or career pivots.
           </p>
-        </section>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 24, alignItems: "start" }}>
+            {/* Role 1 */}
+            <div style={{ padding: 20, background: V.bgAlt, borderRadius: 12 }}>
+              <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Role A</h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <Select value={role1.family} onChange={v => setRole1({ ...role1, family: v })} options={Object.keys(JOB_FAMILIES)} style={{ width: "100%" }} />
+                <Select value={role1.metro} onChange={v => setRole1({ ...role1, metro: v })} options={["All", ...METROS.map(m => m.name)]} style={{ width: "100%" }} />
+              </div>
+              <div style={{ marginTop: 16, textAlign: "center" }}>
+                <p style={{ fontSize: 32, fontWeight: 700, color: V.ink }}>{fmtK(stats1.median)}</p>
+                <p style={{ fontSize: 12, color: V.inkMuted }}>Median · n={stats1.count}</p>
+              </div>
+            </div>
+
+            {/* VS */}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 0" }}>
+              <div style={{ 
+                padding: "8px 16px", 
+                borderRadius: 20, 
+                background: diff > 0 ? V.greenMuted : diff < 0 ? V.roseMuted : V.bgAlt,
+                color: diff > 0 ? V.green : diff < 0 ? V.rose : V.inkMuted,
+                fontWeight: 600,
+                fontSize: 14,
+              }}>
+                {diff > 0 ? "+" : ""}{diff}%
+              </div>
+            </div>
+
+            {/* Role 2 */}
+            <div style={{ padding: 20, background: V.bgAlt, borderRadius: 12 }}>
+              <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Role B</h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <Select value={role2.family} onChange={v => setRole2({ ...role2, family: v })} options={Object.keys(JOB_FAMILIES)} style={{ width: "100%" }} />
+                <Select value={role2.metro} onChange={v => setRole2({ ...role2, metro: v })} options={["All", ...METROS.map(m => m.name)]} style={{ width: "100%" }} />
+              </div>
+              <div style={{ marginTop: 16, textAlign: "center" }}>
+                <p style={{ fontSize: 32, fontWeight: 700, color: V.ink }}>{fmtK(stats2.median)}</p>
+                <p style={{ fontSize: 12, color: V.inkMuted }}>Median · n={stats2.count}</p>
+              </div>
+            </div>
+          </div>
+        </Card>
       </div>
     );
   };
 
   const Contribute = () => {
-    const [formData, setFormData] = useState({ jobTitle: '', company: '', baseSalary: '', yoe: '', metro: '', jobFamily: '' });
-    const [status, setStatus] = useState({ type: '', message: '' });
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [form, setForm] = useState({ title: "", company: "", family: "", salary: "", metro: "" });
+    const [status, setStatus] = useState({ type: "", message: "" });
+    const [submitting, setSubmitting] = useState(false);
 
     const handleSubmit = async (e) => {
       e.preventDefault();
+      if (submitting) return;
       
-      // Prevent double submission
-      if (isSubmitting) return;
-      
-      setIsSubmitting(true);
-      setStatus({ type: 'info', message: 'Submitting...' });
+      setSubmitting(true);
+      setStatus({ type: "info", message: "Submitting..." });
 
-      // Validate salary
-      const salary = parseInt(formData.baseSalary);
+      const salary = parseInt(form.salary);
       if (isNaN(salary) || salary < 20000 || salary > 2000000) {
-        setStatus({ type: 'error', message: 'Please enter a valid salary between $20,000 and $2,000,000.' });
-        setIsSubmitting(false);
+        setStatus({ type: "error", message: "Please enter a valid salary between $20,000 and $2,000,000." });
+        setSubmitting(false);
         return;
       }
 
       try {
-        const { data: result, error } = await supabase
-          .from('submissions')
-          .insert([{
-            job_title: formData.jobTitle.trim(),
-            company: formData.company.trim(),
-            job_family: formData.jobFamily,
-            base_salary: salary,
-            years_of_exp: parseInt(formData.yoe) || null,
-            metro: formData.metro,
-            status: 'pending',
-            confidence_score: 70,
-          }])
-          .select();
+        const { error } = await supabase.from('submissions').insert([{
+          job_title: form.title.trim(),
+          company: form.company.trim(),
+          job_family: form.family,
+          base_salary: salary,
+          metro: form.metro,
+          status: 'pending',
+        }]);
 
-        if (error) {
-          console.error("Submission error:", error);
-          setStatus({ type: 'error', message: `Failed to submit: ${error.message}` });
-          setIsSubmitting(false);
-          return;
-        }
-
-        // Success!
-        setStatus({ type: 'success', message: 'Thank you! Your submission is pending review and will appear once approved.' });
-        setFormData({ jobTitle: '', company: '', baseSalary: '', yoe: '', metro: '', jobFamily: '' });
+        if (error) throw error;
         
+        setStatus({ type: "success", message: "Thank you! Your submission is pending review." });
+        setForm({ title: "", company: "", family: "", salary: "", metro: "" });
       } catch (err) {
-        console.error("Unexpected error:", err);
-        setStatus({ type: 'error', message: 'An unexpected error occurred. Please try again.' });
+        setStatus({ type: "error", message: "Failed to submit: " + err.message });
       }
-      
-      setIsSubmitting(false);
+      setSubmitting(false);
     };
 
-    const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: 7, border: `1px solid ${V.border}`, background: V.surface, color: V.ink, fontSize: 14, fontFamily: 'var(--font-body)' };
-    const labelStyle = { display: 'block', fontSize: 11, color: V.inkMuted, marginBottom: 6, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' };
-
     return (
-      <div style={{ maxWidth: 720 }}>
-        <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 28 }}>
-          <h2 style={{ fontSize: 22, fontWeight: 400, color: V.ink, fontFamily: 'var(--font-display)', margin: 0 }}>Anonymously Share Your Comp</h2>
-          <p style={{ fontSize: 13, color: V.inkMuted, marginTop: 8, marginBottom: 24 }}>
+      <div style={{ maxWidth: 600 }}>
+        <Card>
+          <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Share Your Compensation</h3>
+          <p style={{ fontSize: 13, color: V.inkMuted, marginBottom: 20 }}>
             Help build the most comprehensive compensation database. All submissions are anonymous and reviewed before publishing.
           </p>
-          
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div>
-              <label style={labelStyle}>Job Title *</label>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: V.inkMuted, marginBottom: 6 }}>Job Title *</label>
               <input 
                 type="text" 
                 required 
-                placeholder="e.g. Senior Software Engineer" 
-                value={formData.jobTitle} 
-                onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })} 
-                style={inputStyle}
-                disabled={isSubmitting}
+                value={form.title} 
+                onChange={e => setForm({ ...form, title: e.target.value })}
+                placeholder="e.g. Senior Software Engineer"
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: `1px solid ${V.border}`, fontSize: 14 }}
               />
             </div>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <div>
-                <label style={labelStyle}>Company *</label>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: V.inkMuted, marginBottom: 6 }}>Company *</label>
                 <input 
                   type="text" 
                   required 
-                  placeholder="e.g. Stripe" 
-                  value={formData.company} 
-                  onChange={(e) => setFormData({ ...formData, company: e.target.value })} 
-                  style={inputStyle}
-                  disabled={isSubmitting}
+                  value={form.company} 
+                  onChange={e => setForm({ ...form, company: e.target.value })}
+                  placeholder="e.g. Stripe"
+                  style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: `1px solid ${V.border}`, fontSize: 14 }}
                 />
               </div>
               <div>
-                <label style={labelStyle}>Job Family *</label>
-                <select 
-                  required 
-                  value={formData.jobFamily} 
-                  onChange={(e) => setFormData({ ...formData, jobFamily: e.target.value })} 
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                  disabled={isSubmitting}
-                >
-                  <option value="">Select...</option>
-                  {Object.keys(JOB_FAMILIES).map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: V.inkMuted, marginBottom: 6 }}>Job Family *</label>
+                <Select value={form.family} onChange={v => setForm({ ...form, family: v })} options={Object.keys(JOB_FAMILIES)} placeholder="Select..." style={{ width: "100%" }} />
               </div>
             </div>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <div>
-                <label style={labelStyle}>Base Salary (USD) *</label>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: V.inkMuted, marginBottom: 6 }}>Base Salary (USD) *</label>
                 <input 
                   type="number" 
                   required 
-                  placeholder="150000" 
-                  value={formData.baseSalary} 
-                  onChange={(e) => setFormData({ ...formData, baseSalary: e.target.value })} 
-                  style={inputStyle}
-                  min="20000"
-                  max="2000000"
-                  disabled={isSubmitting}
+                  value={form.salary} 
+                  onChange={e => setForm({ ...form, salary: e.target.value })}
+                  placeholder="150000"
+                  style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: `1px solid ${V.border}`, fontSize: 14 }}
                 />
               </div>
               <div>
-                <label style={labelStyle}>Years of Exp</label>
-                <input 
-                  type="number" 
-                  placeholder="5" 
-                  value={formData.yoe} 
-                  onChange={(e) => setFormData({ ...formData, yoe: e.target.value })} 
-                  style={inputStyle}
-                  min="0"
-                  max="50"
-                  disabled={isSubmitting}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Metro *</label>
-                <select 
-                  required 
-                  value={formData.metro} 
-                  onChange={(e) => setFormData({ ...formData, metro: e.target.value })} 
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                  disabled={isSubmitting}
-                >
-                  <option value="">Select...</option>
-                  {METROS.map(m => <option key={m.name} value={m.name}>{m.name}, {m.state}</option>)}
-                </select>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: V.inkMuted, marginBottom: 6 }}>Metro *</label>
+                <Select value={form.metro} onChange={v => setForm({ ...form, metro: v })} options={METROS.map(m => m.name)} placeholder="Select..." style={{ width: "100%" }} />
               </div>
             </div>
-            
-            <button 
-              type="submit" 
-              disabled={isSubmitting} 
-              style={{ 
-                marginTop: 8, 
-                padding: '12px 24px', 
-                borderRadius: 7, 
-                border: 'none', 
-                background: isSubmitting ? V.inkFaint : V.teal, 
-                color: '#fff', 
-                fontSize: 14, 
-                fontWeight: 600, 
-                cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                transition: 'background 0.15s ease'
-              }}
-            >
-              {isSubmitting ? 'Submitting...' : 'Submit Anonymously'}
-            </button>
-            
+
+            <Button type="submit" disabled={submitting} size="lg" style={{ marginTop: 8 }}>
+              {submitting ? "Submitting..." : "Submit Anonymously"}
+            </Button>
+
             {status.message && (
               <div style={{ 
-                marginTop: 8, 
-                padding: '12px 16px', 
-                borderRadius: 7, 
-                background: status.type === 'success' ? V.tealMuted : status.type === 'error' ? V.roseMuted : V.blueMuted,
-                border: `1px solid ${status.type === 'success' ? V.teal : status.type === 'error' ? V.rose : V.blue}30`
+                padding: 12, 
+                borderRadius: 8, 
+                background: status.type === "success" ? V.greenMuted : status.type === "error" ? V.roseMuted : V.blueMuted,
+                color: status.type === "success" ? V.green : status.type === "error" ? V.rose : V.blue,
+                fontSize: 13,
               }}>
-                <p style={{ margin: 0, fontSize: 13, color: status.type === 'success' ? V.tealDark : status.type === 'error' ? V.rose : V.blue }}>
-                  {status.message}
-                </p>
+                {status.message}
               </div>
             )}
           </form>
-        </section>
-        
-        <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 24, marginTop: 20 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 12 }}>What happens to your data?</h3>
-          <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: V.inkMuted, lineHeight: 1.8 }}>
-            <li>Your submission is completely anonymous - we don't collect any identifying information</li>
-            <li>Data is reviewed for accuracy before being added to the database</li>
-            <li>Approved submissions appear with a "User Submission" source tag</li>
-            <li>All data contributes to more accurate salary bands for everyone</li>
-          </ul>
-        </section>
+        </Card>
       </div>
     );
   };
 
-  const AdminReview = () => {
-    const [actionLoading, setActionLoading] = useState(null);
-    const [adminTab, setAdminTab] = useState('pending');
-    const [editingId, setEditingId] = useState(null);
-    const [editForm, setEditForm] = useState({});
-
-    const startEdit = (sub) => {
-      setEditingId(sub.id);
-      setEditForm({
-        job_title: sub.job_title,
-        company: sub.company,
-        job_family: sub.job_family,
-        base_salary: sub.base_salary,
-        metro: sub.metro,
-      });
-    };
-
-    const cancelEdit = () => {
-      setEditingId(null);
-      setEditForm({});
-    };
-
-    const saveEdit = async (id) => {
-      setActionLoading(id);
-      try {
-        const { error } = await supabase
-          .from('submissions')
-          .update({
-            job_title: editForm.job_title,
-            company: editForm.company,
-            job_family: editForm.job_family,
-            base_salary: parseInt(editForm.base_salary),
-            metro: editForm.metro,
-          })
-          .eq('id', id);
-        
-        if (error) {
-          alert("Failed to save: " + error.message);
-        } else {
-          setSubmissions(s => s.map(x => x.id === id ? { ...x, ...editForm, base_salary: parseInt(editForm.base_salary) } : x));
-          setEditingId(null);
-          setEditForm({});
-        }
-      } catch (err) {
-        alert("Error: " + err.message);
-      }
-      setActionLoading(null);
-    };
+  const Admin = () => {
+    const [adminTab, setAdminTab] = useState("pending");
+    const [loading, setLoading] = useState(null);
 
     const handleApprove = async (id, sub) => {
-      // Check if already approved to prevent duplicates
-      if (sub.status === 'approved') {
-        alert("This submission has already been approved.");
-        return;
-      }
+      if (sub.status !== 'pending') return;
+      setLoading(id);
       
-      setActionLoading(id);
       try {
-        // Add to comp_data
-        const insertData = {
+        await supabase.from('comp_data').insert([{
           company: sub.company,
           family: sub.job_family,
           title: sub.job_title,
@@ -950,279 +1044,188 @@ export default function Banded() {
           salary_max: Math.round(sub.base_salary * 1.1),
           source: 'User Submission',
           status: 'approved',
-        };
+        }]);
         
-        const { error: insertError } = await supabase.from('comp_data').insert([insertData]);
-        
-        if (insertError) {
-          console.error("Insert error:", insertError);
-          alert("Failed to add to comp_data: " + insertError.message);
-          setActionLoading(null);
-          return;
-        }
-        
-        // Update submission status
-        const { error: updateError } = await supabase
-          .from('submissions')
-          .update({ status: 'approved' })
-          .eq('id', id);
-        
-        if (updateError) {
-          console.error("Update error:", updateError);
-        }
-        
-        // Update local state
+        await supabase.from('submissions').update({ status: 'approved' }).eq('id', id);
         setSubmissions(s => s.map(x => x.id === id ? { ...x, status: 'approved' } : x));
-        
       } catch (err) {
-        console.error("Approve error:", err);
-        alert("Failed to approve: " + err.message);
+        alert("Error: " + err.message);
       }
-      setActionLoading(null);
+      setLoading(null);
     };
 
     const handleReject = async (id) => {
-      setActionLoading(id);
-      try {
-        const { error } = await supabase
-          .from('submissions')
-          .update({ status: 'rejected' })
-          .eq('id', id);
-        
-        if (error) {
-          console.error("Reject error:", error);
-        }
-        
-        setSubmissions(s => s.map(x => x.id === id ? { ...x, status: 'rejected' } : x));
-      } catch (err) {
-        console.error("Reject error:", err);
-      }
-      setActionLoading(null);
-    };
-
-    const handleDelete = async (id) => {
-      if (!confirm("Delete this submission permanently?")) return;
-      
-      setActionLoading(id);
-      try {
-        const { error } = await supabase
-          .from('submissions')
-          .delete()
-          .eq('id', id);
-        
-        if (!error) {
-          setSubmissions(s => s.filter(x => x.id !== id));
-        }
-      } catch (err) {
-        console.error("Delete error:", err);
-      }
-      setActionLoading(null);
+      setLoading(id);
+      await supabase.from('submissions').update({ status: 'rejected' }).eq('id', id);
+      setSubmissions(s => s.map(x => x.id === id ? { ...x, status: 'rejected' } : x));
+      setLoading(null);
     };
 
     const pending = submissions.filter(s => s.status === 'pending');
     const approved = submissions.filter(s => s.status === 'approved');
     const rejected = submissions.filter(s => s.status === 'rejected');
 
-    const inputStyle = { padding: '6px 10px', borderRadius: 5, border: `1px solid ${V.border}`, fontSize: 12, width: '100%' };
-
-    const renderEditableRow = (row) => {
-      if (editingId === row.id) {
-        return (
-          <tr key={row.id} style={{ background: V.bgWarm }}>
-            <td style={{ padding: 10 }}>
-              <input style={inputStyle} value={editForm.job_title} onChange={e => setEditForm({...editForm, job_title: e.target.value})} />
-            </td>
-            <td style={{ padding: 10 }}>
-              <input style={inputStyle} value={editForm.company} onChange={e => setEditForm({...editForm, company: e.target.value})} />
-            </td>
-            <td style={{ padding: 10 }}>
-              <select style={inputStyle} value={editForm.job_family} onChange={e => setEditForm({...editForm, job_family: e.target.value})}>
-                {Object.keys(JOB_FAMILIES).map(f => <option key={f} value={f}>{f}</option>)}
-              </select>
-            </td>
-            <td style={{ padding: 10 }}>
-              <input style={inputStyle} type="number" value={editForm.base_salary} onChange={e => setEditForm({...editForm, base_salary: e.target.value})} />
-            </td>
-            <td style={{ padding: 10 }}>
-              <select style={inputStyle} value={editForm.metro} onChange={e => setEditForm({...editForm, metro: e.target.value})}>
-                {METROS.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
-              </select>
-            </td>
-            <td style={{ padding: 10 }}>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => saveEdit(row.id)} style={{ padding: "4px 10px", borderRadius: 4, border: "none", background: V.teal, color: "#fff", fontSize: 11, cursor: "pointer" }}>Save</button>
-                <button onClick={cancelEdit} style={{ padding: "4px 10px", borderRadius: 4, border: `1px solid ${V.border}`, background: "transparent", color: V.inkMuted, fontSize: 11, cursor: "pointer" }}>Cancel</button>
-              </div>
-            </td>
-          </tr>
-        );
-      }
-      return null;
-    };
-
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-        <div style={{ padding: "12px 16px", background: V.blueMuted, border: `1px solid ${V.blue}30`, borderRadius: 8 }}>
-          <p style={{ margin: 0, fontSize: 13, color: V.blue }}>
-            🔒 Admin view. {pending.length} pending · {approved.length} approved · {rejected.length} rejected
-          </p>
-        </div>
-        
-        {/* Tabs */}
-        <div style={{ display: "flex", gap: 8 }}>
-          <Pill active={adminTab === 'pending'} onClick={() => setAdminTab('pending')}>
-            Pending ({pending.length})
-          </Pill>
-          <Pill active={adminTab === 'approved'} onClick={() => setAdminTab('approved')}>
-            Approved ({approved.length})
-          </Pill>
-          <Pill active={adminTab === 'rejected'} onClick={() => setAdminTab('rejected')}>
-            Rejected ({rejected.length})
-          </Pill>
-        </div>
-        
-        {/* Pending Tab */}
-        {adminTab === 'pending' && (
-          <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 16 }}>Pending Submissions</h3>
-            {pending.length === 0 ? (
-              <p style={{ color: V.inkMuted, fontSize: 13 }}>No pending submissions. 🎉</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <Tabs 
+          tabs={[
+            { key: "pending", label: `Pending (${pending.length})` },
+            { key: "approved", label: `Approved (${approved.length})` },
+            { key: "rejected", label: `Rejected (${rejected.length})` },
+          ]}
+          active={adminTab}
+          onChange={setAdminTab}
+        />
+
+        <Card>
+          {adminTab === "pending" && (
+            pending.length === 0 ? (
+              <p style={{ color: V.inkMuted, textAlign: "center", padding: 40 }}>No pending submissions 🎉</p>
             ) : (
-              <div style={{ overflowX: "auto", borderRadius: 8, border: `1px solid ${V.border}` }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                  <thead>
-                    <tr>
-                      {["Title", "Company", "Family", "Salary", "Metro", "Actions"].map(h => (
-                        <th key={h} style={{ padding: "11px 14px", background: V.bgWarm, color: V.inkMuted, border: "none", borderBottom: `1px solid ${V.border}`, fontWeight: 600, fontSize: 11, letterSpacing: "0.04em", textTransform: "uppercase", textAlign: "left", fontFamily: "var(--font-mono)" }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pending.map(row => (
-                      editingId === row.id ? renderEditableRow(row) : (
-                        <tr key={row.id} style={{ borderBottom: `1px solid ${V.borderLight}` }}>
-                          <td style={{ padding: "10px 14px" }}><strong style={{ color: V.ink }}>{row.job_title}</strong></td>
-                          <td style={{ padding: "10px 14px", color: V.inkSoft }}>{row.company}</td>
-                          <td style={{ padding: "10px 14px", color: V.inkSoft }}>{row.job_family}</td>
-                          <td style={{ padding: "10px 14px" }}><span className="mono">{fmt(row.base_salary)}</span></td>
-                          <td style={{ padding: "10px 14px", color: V.inkSoft }}>{row.metro}</td>
-                          <td style={{ padding: "10px 14px" }}>
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              <button onClick={() => startEdit(row)} style={{ padding: "4px 10px", borderRadius: 4, border: `1px solid ${V.border}`, background: "transparent", color: V.inkMuted, fontSize: 11, cursor: "pointer" }}>Edit</button>
-                              <button onClick={() => handleApprove(row.id, row)} disabled={actionLoading === row.id} style={{ padding: "4px 10px", borderRadius: 4, border: "none", background: V.teal, color: "#fff", fontSize: 11, cursor: "pointer", opacity: actionLoading === row.id ? 0.5 : 1 }}>{actionLoading === row.id ? '...' : 'Approve'}</button>
-                              <button onClick={() => handleReject(row.id)} disabled={actionLoading === row.id} style={{ padding: "4px 10px", borderRadius: 4, border: `1px solid ${V.rose}`, background: "transparent", color: V.rose, fontSize: 11, cursor: "pointer" }}>Reject</button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        )}
-        
-        {/* Approved Tab */}
-        {adminTab === 'approved' && (
-          <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 16 }}>Approved Submissions</h3>
-            <p style={{ fontSize: 12, color: V.inkFaint, marginBottom: 16 }}>These have been added to comp_data.</p>
-            {approved.length === 0 ? (
-              <p style={{ color: V.inkMuted, fontSize: 13 }}>No approved submissions yet.</p>
-            ) : (
-              <SortableTable data={approved} columns={[
-                { key: "job_title", label: "Title", render: v => <strong style={{ color: V.ink }}>{v}</strong> },
+              <DataTable data={pending} columns={[
+                { key: "job_title", label: "Title", render: v => <strong>{v}</strong> },
                 { key: "company", label: "Company" },
                 { key: "job_family", label: "Family" },
-                { key: "base_salary", label: "Salary", align: "right", render: v => <span className="mono">{fmt(v)}</span> },
+                { key: "base_salary", label: "Salary", align: "right", render: v => fmt(v) },
                 { key: "metro", label: "Metro" },
                 { key: "actions", label: "", render: (_, row) => (
-                  <button onClick={() => handleDelete(row.id)} style={{ padding: "4px 8px", borderRadius: 4, border: `1px solid ${V.border}`, background: "transparent", color: V.inkFaint, fontSize: 10, cursor: "pointer" }}>Delete</button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Button size="sm" onClick={() => handleApprove(row.id, row)} disabled={loading === row.id}>
+                      {loading === row.id ? "..." : "Approve"}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => handleReject(row.id)} disabled={loading === row.id}>
+                      Reject
+                    </Button>
+                  </div>
                 )}
               ]} />
-            )}
-          </section>
-        )}
-        
-        {/* Rejected Tab */}
-        {adminTab === 'rejected' && (
-          <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 16 }}>Rejected Submissions</h3>
-            {rejected.length === 0 ? (
-              <p style={{ color: V.inkMuted, fontSize: 13 }}>No rejected submissions.</p>
+            )
+          )}
+
+          {adminTab === "approved" && (
+            approved.length === 0 ? (
+              <p style={{ color: V.inkMuted, textAlign: "center", padding: 40 }}>No approved submissions yet</p>
             ) : (
-              <SortableTable data={rejected} columns={[
-                { key: "job_title", label: "Title", render: v => <strong style={{ color: V.ink }}>{v}</strong> },
+              <DataTable data={approved} columns={[
+                { key: "job_title", label: "Title" },
                 { key: "company", label: "Company" },
-                { key: "job_family", label: "Family" },
-                { key: "base_salary", label: "Salary", align: "right", render: v => <span className="mono">{fmt(v)}</span> },
+                { key: "base_salary", label: "Salary", align: "right", render: v => fmt(v) },
                 { key: "metro", label: "Metro" },
-                { key: "actions", label: "", render: (_, row) => (
-                  <button onClick={() => handleDelete(row.id)} style={{ padding: "4px 8px", borderRadius: 4, border: `1px solid ${V.border}`, background: "transparent", color: V.inkFaint, fontSize: 10, cursor: "pointer" }}>Delete</button>
-                )}
               ]} />
-            )}
-          </section>
-        )}
+            )
+          )}
+
+          {adminTab === "rejected" && (
+            rejected.length === 0 ? (
+              <p style={{ color: V.inkMuted, textAlign: "center", padding: 40 }}>No rejected submissions</p>
+            ) : (
+              <DataTable data={rejected} columns={[
+                { key: "job_title", label: "Title" },
+                { key: "company", label: "Company" },
+                { key: "base_salary", label: "Salary", align: "right", render: v => fmt(v) },
+              ]} />
+            )
+          )}
+        </Card>
       </div>
     );
   };
 
-  const content = { dashboard: Dashboard, explore: Explore, bands: Bands, sources: DataSources, contribute: Contribute, admin: AdminReview };
-  const Page = content[tab] || Dashboard;
+  const pages = { overview: Overview, explore: Explore, bands: BandBuilder, compare: Compare, contribute: Contribute, admin: Admin };
+  const CurrentPage = pages[tab] || Overview;
 
   // ============================================================================
   // RENDER
   // ============================================================================
 
   return (
-    <div style={{ minHeight: "100vh", background: V.bg, color: V.ink, fontFamily: "var(--font-body)", display: "flex" }}>
+    <div style={{ minHeight: "100vh", background: V.bg }}>
       <style>{GLOBAL_CSS}</style>
-      
-      {/* Sidebar */}
-      <nav style={{ width: 220, minHeight: "100vh", background: V.surface, borderRight: `1px solid ${V.border}`, padding: "20px 12px", display: "flex", flexDirection: "column", flexShrink: 0 }}>
-        <div style={{ padding: "0 12px", marginBottom: 28 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 7, background: V.teal, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="2" rx="1" fill="white" /><rect x="4" y="7" width="8" height="2" rx="1" fill="white" opacity="0.7" /><rect x="3" y="11" width="10" height="2" rx="1" fill="white" opacity="0.4" /></svg>
+
+      {/* Header */}
+      <header style={{ 
+        background: V.surface, 
+        borderBottom: `1px solid ${V.border}`, 
+        padding: "12px 24px",
+        position: "sticky",
+        top: 0,
+        zIndex: 100,
+      }}>
+        <div style={{ maxWidth: 1400, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ 
+              width: 36, 
+              height: 36, 
+              borderRadius: 10, 
+              background: `linear-gradient(135deg, ${V.primary}, ${V.blue})`,
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center",
+              color: "#fff",
+              fontWeight: 700,
+              fontSize: 16,
+            }}>
+              B
             </div>
             <div>
-              <p style={{ fontSize: 17, fontWeight: 400, color: V.ink, fontFamily: "var(--font-display)", margin: 0 }}>Banded</p>
-              <p style={{ fontSize: 9, color: V.inkFaint, letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "var(--font-mono)", margin: 0 }}>Comp Intelligence</p>
+              <h1 style={{ fontSize: 18, fontWeight: 700, color: V.ink, margin: 0 }}>Banded</h1>
+              <p style={{ fontSize: 11, color: V.inkMuted, margin: 0 }}>Compensation Intelligence</p>
             </div>
           </div>
+          
+          {/* Desktop nav */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }} className="desktop-nav">
+            <Tabs tabs={tabs} active={tab} onChange={setTab} />
+          </div>
+
+          {/* Mobile menu button */}
+          <button 
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            style={{ display: "none", padding: 8, background: "none", border: "none", cursor: "pointer" }}
+            className="mobile-menu-btn"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={V.ink} strokeWidth="2">
+              <path d="M3 12h18M3 6h18M3 18h18" />
+            </svg>
+          </button>
         </div>
-        
-        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          {pages.map(p => (
-            <NavBtn key={p.key} active={tab === p.key} onClick={() => setTab(p.key)} icon={p.icon} badge={p.badge}>
-              {p.label}
-            </NavBtn>
-          ))}
-        </div>
-        
-        <div style={{ marginTop: "auto", padding: "14px 12px", borderTop: `1px solid ${V.borderLight}` }}>
-          <p style={{ fontSize: 10, color: V.inkFaint, lineHeight: 1.7, margin: 0 }}>
-            <strong style={{ color: V.inkMuted }}>Status</strong><br />
-            {dataSource === "database" ? `${fmtNum(data.length)} records` : dataSource === "empty" ? "No data" : "Loading..."}
-          </p>
-        </div>
-      </nav>
-      
+
+        {/* Mobile nav */}
+        {mobileMenuOpen && (
+          <div style={{ padding: "16px 0", borderTop: `1px solid ${V.border}`, marginTop: 12 }}>
+            <Tabs tabs={tabs} active={tab} onChange={(t) => { setTab(t); setMobileMenuOpen(false); }} />
+          </div>
+        )}
+      </header>
+
       {/* Main content */}
-      <main style={{ flex: 1, overflow: "auto", maxHeight: "100vh", minWidth: 0 }}>
-        <header style={{ padding: "18px 32px", borderBottom: `1px solid ${V.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", background: V.surface }}>
-          <div>
-            <h1 style={{ fontSize: 20, fontWeight: 400, margin: 0, fontFamily: "var(--font-display)", color: V.ink }}>{pages.find(p => p.key === tab)?.label}</h1>
+      <main style={{ maxWidth: 1400, margin: "0 auto", padding: 24 }}>
+        {dataSource === "empty" && (
+          <div style={{ marginBottom: 24, padding: 16, background: V.amberMuted, borderRadius: 8, border: `1px solid ${V.amber}30` }}>
+            <p style={{ margin: 0, fontSize: 13, color: V.amber }}>📊 No data yet. Run your scrapers or add data via the Contribute page.</p>
           </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            {isAdmin && <span style={{ padding: "4px 10px", borderRadius: 5, background: V.roseMuted, color: V.rose, fontSize: 11, fontWeight: 600 }}>ADMIN</span>}
-            <div style={{ width: 32, height: 32, borderRadius: "50%", background: V.teal, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#fff" }}>BK</div>
-          </div>
-        </header>
-        <div style={{ padding: 32 }}><Page /></div>
+        )}
+        
+        <CurrentPage />
       </main>
+
+      {/* Footer */}
+      <footer style={{ borderTop: `1px solid ${V.border}`, padding: "24px", marginTop: 48, textAlign: "center" }}>
+        <p style={{ fontSize: 12, color: V.inkFaint }}>
+          {fmtNum(data.length)} records from {stats.sourceCount} sources · Updated continuously
+        </p>
+      </footer>
+
+      {/* Mobile styles */}
+      <style>{`
+        @media (max-width: 768px) {
+          .desktop-nav { display: none !important; }
+          .mobile-menu-btn { display: block !important; }
+        }
+        @media (min-width: 769px) {
+          .mobile-menu-btn { display: none !important; }
+        }
+      `}</style>
     </div>
   );
 }
