@@ -441,19 +441,54 @@ export default function Banded() {
   // Search handling
   const searchInputRef = useRef(null);
   const [localSearch, setLocalSearch] = useState("");
-  const searchTimeoutRef = useRef(null);
 
   const handleSearchChange = useCallback((e) => {
-    const value = e.target.value;
-    setLocalSearch(value);
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    searchTimeoutRef.current = setTimeout(() => { setQ(value); }, 300);
+    setLocalSearch(e.target.value);
+  }, []);
+
+  const handleSearchSubmit = useCallback(() => {
+    setQ(localSearch);
+  }, [localSearch]);
+
+  const handleSearchKeyDown = useCallback((e) => {
+    if (e.key === 'Enter') {
+      setQ(localSearch);
+    }
+  }, [localSearch]);
+
+  const handleClearSearch = useCallback(() => {
+    setLocalSearch("");
+    setQ("");
   }, []);
 
   const filterBarContent = (
     <div className="fade-up fade-up-1" style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <input ref={searchInputRef} value={localSearch} onChange={handleSearchChange} placeholder="Search company, title, skill…" autoComplete="off" style={{ padding: "7px 14px", borderRadius: 7, border: `1px solid ${V.border}`, background: V.surface, color: V.ink, fontSize: 13, width: 240, fontFamily: "var(--font-body)" }} onFocus={e => e.target.style.borderColor = V.teal} onBlur={e => e.target.style.borderColor = V.border} />
+        <div style={{ display: "flex", gap: 0 }}>
+          <input 
+            ref={searchInputRef} 
+            value={localSearch} 
+            onChange={handleSearchChange} 
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search company, title, skill…" 
+            autoComplete="off" 
+            style={{ padding: "7px 14px", borderRadius: "7px 0 0 7px", border: `1px solid ${V.border}`, borderRight: "none", background: V.surface, color: V.ink, fontSize: 13, width: 200, fontFamily: "var(--font-body)" }} 
+          />
+          <button 
+            onClick={handleSearchSubmit}
+            style={{ padding: "7px 14px", borderRadius: "0 7px 7px 0", border: `1px solid ${V.teal}`, background: V.teal, color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-body)" }}
+          >
+            Search
+          </button>
+          {q && (
+            <button 
+              onClick={handleClearSearch}
+              style={{ marginLeft: 6, padding: "7px 10px", borderRadius: 7, border: `1px solid ${V.border}`, background: "transparent", color: V.inkMuted, fontSize: 12, cursor: "pointer" }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
         <span style={{ width: 1, height: 20, background: V.border }} />
         <span style={{ fontSize: 10, color: V.inkFaint, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Family</span>
         <Pill active={famF === "All"} onClick={() => setFamF("All")}>All</Pill>
