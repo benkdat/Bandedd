@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, AreaChart, Area, Cell, Legend,
+  ResponsiveContainer, AreaChart, Area, Cell, Legend, PieChart, Pie,
 } from "recharts";
 import _ from "lodash";
 import { supabase } from "./supabaseClient";
@@ -13,7 +13,7 @@ const V = {
   tealLight: "#CCFBF1", tealMuted: "rgba(13,148,136,0.08)", rose: "#E11D48",
   roseMuted: "rgba(225,29,72,0.06)", amber: "#D97706", amberMuted: "rgba(217,119,6,0.08)",
   blue: "#2563EB", blueMuted: "rgba(37,99,235,0.06)", violet: "#7C3AED",
-  chartSet: ["#0D9488", "#2563EB", "#D97706", "#E11D48", "#7C3AED"],
+  chartSet: ["#0D9488", "#2563EB", "#D97706", "#E11D48", "#7C3AED", "#059669", "#DC2626", "#7C3AED"],
   focus: "0 0 0 2px #FAFAF7, 0 0 0 4px #0D9488",
 };
 
@@ -25,14 +25,13 @@ const GLOBAL_CSS = `
   :focus-visible { outline: none; box-shadow: ${V.focus}; border-radius: 4px; }
   :focus:not(:focus-visible) { outline: none; }
   .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: ${V.border}; border-radius: 3px; }
   h1, h2, h3 { text-wrap: balance; }
   @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
   .fade-up { animation: fadeUp 0.4s ease-out both; }
-  .fade-up-1 { animation-delay: 0ms; } .fade-up-2 { animation-delay: 60ms; } .fade-up-3 { animation-delay: 120ms; } .fade-up-4 { animation-delay: 180ms; } .fade-up-5 { animation-delay: 240ms; }
+  .fade-up-1 { animation-delay: 0ms; } .fade-up-2 { animation-delay: 60ms; } .fade-up-3 { animation-delay: 120ms; } .fade-up-4 { animation-delay: 180ms; }
 `;
 
 const JOB_FAMILIES = {
@@ -47,127 +46,169 @@ const JOB_FAMILIES = {
 };
 
 const METROS = [
-  { name: "San Francisco", state: "CA", cola: 1.35, region: "West" }, { name: "New York", state: "NY", cola: 1.28, region: "Northeast" },
-  { name: "Seattle", state: "WA", cola: 1.22, region: "West" }, { name: "Austin", state: "TX", cola: 1.05, region: "South" },
-  { name: "Denver", state: "CO", cola: 1.08, region: "West" }, { name: "Boston", state: "MA", cola: 1.20, region: "Northeast" },
-  { name: "Chicago", state: "IL", cola: 1.02, region: "Midwest" }, { name: "Los Angeles", state: "CA", cola: 1.25, region: "West" },
-  { name: "Miami", state: "FL", cola: 1.0, region: "South" }, { name: "Remote", state: "US", cola: 1.0, region: "National" },
-  { name: "Portland", state: "OR", cola: 1.10, region: "West" }, { name: "Atlanta", state: "GA", cola: 0.98, region: "South" },
+  { name: "San Francisco", state: "CA", cola: 1.35, region: "West" },
+  { name: "New York", state: "NY", cola: 1.28, region: "Northeast" },
+  { name: "Seattle", state: "WA", cola: 1.22, region: "West" },
+  { name: "Austin", state: "TX", cola: 1.05, region: "South" },
+  { name: "Denver", state: "CO", cola: 1.08, region: "West" },
+  { name: "Boston", state: "MA", cola: 1.20, region: "Northeast" },
+  { name: "Chicago", state: "IL", cola: 1.02, region: "Midwest" },
+  { name: "Los Angeles", state: "CA", cola: 1.25, region: "West" },
+  { name: "Miami", state: "FL", cola: 1.0, region: "South" },
+  { name: "Remote", state: "US", cola: 1.0, region: "National" },
+  { name: "Portland", state: "OR", cola: 1.10, region: "West" },
+  { name: "Atlanta", state: "GA", cola: 0.98, region: "South" },
   { name: "Raleigh", state: "NC", cola: 0.95, region: "South" },
 ];
 
-const COMPANIES = [
-  { name: "Stripe", size: "enterprise", industry: "Fintech" }, { name: "Datadog", size: "enterprise", industry: "DevTools" },
-  { name: "Snowflake", size: "enterprise", industry: "Data/Cloud" }, { name: "Figma", size: "mid-market", industry: "Design" },
-  { name: "Notion", size: "mid-market", industry: "Productivity" }, { name: "Vercel", size: "mid-market", industry: "DevTools" },
-  { name: "Linear", size: "smb", industry: "DevTools" }, { name: "Retool", size: "mid-market", industry: "DevTools" },
-  { name: "Coinbase", size: "enterprise", industry: "Fintech" }, { name: "Plaid", size: "enterprise", industry: "Fintech" },
-  { name: "Anthropic", size: "enterprise", industry: "AI/ML" }, { name: "OpenAI", size: "enterprise", industry: "AI/ML" },
-];
-
-const SKILLS_MAP = {
-  "Software Engineering": ["Python", "Rust", "Go", "TypeScript", "React", "Kubernetes", "AWS"],
-  "Product Management": ["SQL", "A/B Testing", "Roadmapping", "OKRs", "User Research"],
-  "Data Science": ["Python", "SQL", "PyTorch", "TensorFlow", "MLOps", "Spark"],
-  "Design": ["Figma", "Prototyping", "Design Systems", "User Research"],
-  "DevOps / SRE": ["Kubernetes", "Terraform", "AWS", "GCP", "Docker"],
-  "People / HR": ["Workday", "UKG", "Compensation", "Benefits", "HRIS"],
-  "Marketing": ["SEO", "Content Strategy", "HubSpot", "Google Analytics"],
-  "Sales": ["Salesforce", "Enterprise Sales", "SaaS", "Negotiation"],
+// Utility functions
+const pct = (arr, p) => {
+  if (!arr.length) return 0;
+  const s = [...arr].sort((a, b) => a - b);
+  const i = (p / 100) * (s.length - 1);
+  const l = Math.floor(i);
+  return l === Math.ceil(i) ? s[l] : s[l] + (s[Math.ceil(i)] - s[l]) * (i - l);
 };
-
-const WORK_MODELS = ["Remote", "Hybrid", "Onsite"];
-const SOURCES = ["LinkedIn Jobs", "Indeed", "Greenhouse Board", "CO Transparency", "CA Transparency", "Levels.fyi", "BLS OEWS"];
-
-// Demo data generator (fallback when database is empty)
-function sr(seed) { let s = seed; return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; }
-
-function buildDemoDataset() {
-  const r = sr(42); const out = []; let id = 0;
-  for (const co of COMPANIES) {
-    for (const [fam, cfg] of Object.entries(JOB_FAMILIES)) {
-      const n = Math.floor(r() * 3) + 1;
-      for (let p = 0; p < n; p++) {
-        const li = Math.floor(r() * cfg.levels.length); const m = METROS[Math.floor(r() * METROS.length)];
-        const pct = li / (cfg.levels.length - 1); const bMin = cfg.base[0] + (cfg.base[1] - cfg.base[0]) * pct * 0.7;
-        const bMax = bMin * (1.15 + r() * 0.25); const sMin = Math.round(bMin * m.cola / 1000) * 1000;
-        const sMax = Math.round(bMax * m.cola / 1000) * 1000; const mid = Math.round((sMin + sMax) / 2 / 1000) * 1000;
-        const sk = SKILLS_MAP[fam] || []; const picked = sk.slice(0, Math.floor(r() * 3) + 1);
-        const dAgo = Math.floor(r() * 90); const dt = new Date(); dt.setDate(dt.getDate() - dAgo);
-        out.push({ id: ++id, company: co.name, size: co.size, industry: co.industry, family: fam, title: cfg.levels[li], code: cfg.codes[li], level: li + 1, metro: m.name, state: m.state, region: m.region, sMin, sMax, mid, work: WORK_MODELS[Math.floor(r() * 3)], skills: picked, source: SOURCES[Math.floor(r() * SOURCES.length)], posted: dt.toISOString().split("T")[0], daysAgo: dAgo });
-      }
-    }
-  }
-  return out;
-}
-
-function buildTrends() {
-  const months = ["Sep '25", "Oct '25", "Nov '25", "Dec '25", "Jan '26", "Feb '26"];
-  return months.map((m, i) => ({ month: m, "Software Engineering": 175000 + i * 2800 + Math.random() * 3000, "Product Management": 162000 + i * 2200 + Math.random() * 2500, "Data Science": 155000 + i * 2500 + Math.random() * 2000, "Design": 130000 + i * 1800 + Math.random() * 2000, "DevOps / SRE": 158000 + i * 2600 + Math.random() * 2500 }));
-}
-
-const pct = (arr, p) => { const s = [...arr].sort((a, b) => a - b); const i = (p / 100) * (s.length - 1); const l = Math.floor(i); return l === Math.ceil(i) ? s[l] : s[l] + (s[Math.ceil(i)] - s[l]) * (i - l); };
 const fmt = n => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 const fmtK = n => "$" + new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(n / 1000)) + "K";
 const fmtNum = n => new Intl.NumberFormat("en-US").format(n);
+const timeAgo = (date) => {
+  if (!date) return 'Never';
+  const now = new Date();
+  const then = new Date(date);
+  const diffMs = now - then;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 30) return `${diffDays}d ago`;
+  return then.toLocaleDateString();
+};
 
+// Reusable components
 function Metric({ label, value, detail, accent = V.teal, delay = 0 }) {
-  return (<div className={`fade-up fade-up-${delay + 1}`} style={{ flex: "1 1 220px", minWidth: 200, padding: "22px 24px", background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, position: "relative", overflow: "hidden" }}>
-    <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: 2, background: accent, opacity: 0.5 }} />
-    <p style={{ fontSize: 11, fontWeight: 600, color: V.inkMuted, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>{label}</p>
-    <p style={{ fontSize: 28, fontWeight: 700, color: V.ink, marginTop: 6, fontFamily: "var(--font-display)", lineHeight: 1.1 }}>{value}</p>
-    {detail && <p style={{ fontSize: 12, color: V.inkFaint, marginTop: 6 }}>{detail}</p>}
-  </div>);
+  return (
+    <div className={`fade-up fade-up-${delay + 1}`} style={{ flex: "1 1 200px", minWidth: 180, padding: "20px 22px", background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, position: "relative", overflow: "hidden" }}>
+      <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: 2, background: accent, opacity: 0.5 }} />
+      <p style={{ fontSize: 11, fontWeight: 600, color: V.inkMuted, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>{label}</p>
+      <p style={{ fontSize: 26, fontWeight: 700, color: V.ink, marginTop: 6, fontFamily: "var(--font-display)", lineHeight: 1.1 }}>{value}</p>
+      {detail && <p style={{ fontSize: 12, color: V.inkFaint, marginTop: 6 }}>{detail}</p>}
+    </div>
+  );
 }
 
 function Pill({ children, active, onClick }) {
-  return (<button onClick={onClick} aria-pressed={active} style={{ padding: "5px 13px", borderRadius: 6, border: `1px solid ${active ? V.teal : V.border}`, background: active ? V.tealMuted : "transparent", color: active ? V.tealDark : V.inkMuted, fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: "var(--font-body)", whiteSpace: "nowrap", transition: "background 0.15s ease" }}>{children}</button>);
+  return (
+    <button onClick={onClick} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${active ? V.teal : V.border}`, background: active ? V.tealMuted : "transparent", color: active ? V.tealDark : V.inkMuted, fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: "var(--font-body)", whiteSpace: "nowrap", transition: "all 0.15s ease" }}>
+      {children}
+    </button>
+  );
 }
 
-function NavBtn({ children, active, onClick, icon }) {
-  return (<button onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderRadius: 8, border: "none", width: "100%", textAlign: "left", background: active ? V.tealMuted : "transparent", color: active ? V.tealDark : V.inkSoft, fontSize: 13, fontWeight: active ? 600 : 450, cursor: "pointer", fontFamily: "var(--font-body)" }} onMouseEnter={e => { if (!active) e.currentTarget.style.background = V.surfaceMuted; }} onMouseLeave={e => { if (!active) e.currentTarget.style.background = active ? V.tealMuted : "transparent"; }}>
-    <span style={{ fontSize: 15, width: 22, textAlign: "center", opacity: active ? 1 : 0.6 }}>{icon}</span>{children}
-  </button>);
+function NavBtn({ children, active, onClick, icon, badge }) {
+  return (
+    <button onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderRadius: 8, border: "none", width: "100%", textAlign: "left", background: active ? V.tealMuted : "transparent", color: active ? V.tealDark : V.inkSoft, fontSize: 13, fontWeight: active ? 600 : 450, cursor: "pointer", fontFamily: "var(--font-body)" }} onMouseEnter={e => { if (!active) e.currentTarget.style.background = V.surfaceMuted; }} onMouseLeave={e => { if (!active) e.currentTarget.style.background = active ? V.tealMuted : "transparent"; }}>
+      <span style={{ fontSize: 15, width: 22, textAlign: "center", opacity: active ? 1 : 0.6 }}>{icon}</span>
+      <span style={{ flex: 1 }}>{children}</span>
+      {badge && <span style={{ padding: "2px 6px", borderRadius: 4, background: V.teal, color: "#fff", fontSize: 10, fontWeight: 600 }}>{badge}</span>}
+    </button>
+  );
 }
 
-function SourceTag({ source }) {
-  const isTransparency = source?.includes("Transparency"); const isGov = source?.includes("BLS") || source?.includes("H-1B");
-  const c = isTransparency ? V.teal : isGov ? V.amber : V.blue;
-  return (<span style={{ padding: "2px 7px", borderRadius: 4, background: `${c}12`, color: c, fontSize: 10, fontWeight: 600, fontFamily: "var(--font-mono)" }}>{source || "Unknown"}</span>);
+function SourceTag({ source, showConfidence, confidence }) {
+  const colors = {
+    'Greenhouse': V.teal,
+    'Lever': V.blue,
+    'Ashby': V.violet,
+    'Workday': V.amber,
+    'H-1B Disclosure': '#059669',
+    'PERM Disclosure': '#059669',
+    'BLS OEWS': '#059669',
+    'SEC Proxy': '#059669',
+    'User Submission': V.rose,
+  };
+  const c = colors[source] || V.blue;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <span style={{ padding: "2px 7px", borderRadius: 4, background: `${c}15`, color: c, fontSize: 10, fontWeight: 600, fontFamily: "var(--font-mono)" }}>{source || "Unknown"}</span>
+      {showConfidence && confidence && (
+        <span style={{ fontSize: 9, color: V.inkFaint }}>{confidence}%</span>
+      )}
+    </span>
+  );
 }
 
 function SortableTable({ data, columns, maxRows = 50 }) {
-  const [sortKey, setSortKey] = useState(null); const [sortDir, setSortDir] = useState("desc");
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("desc");
+  
   const sorted = useMemo(() => {
     if (!sortKey) return data.slice(0, maxRows);
-    return [...data].sort((a, b) => { const va = a[sortKey], vb = b[sortKey]; if (typeof va === "number") return sortDir === "asc" ? va - vb : vb - va; return sortDir === "asc" ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va)); }).slice(0, maxRows);
+    return [...data].sort((a, b) => {
+      const va = a[sortKey], vb = b[sortKey];
+      if (typeof va === "number") return sortDir === "asc" ? va - vb : vb - va;
+      return sortDir === "asc" ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+    }).slice(0, maxRows);
   }, [data, sortKey, sortDir, maxRows]);
-  const toggle = (k) => { if (sortKey === k) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortKey(k); setSortDir("desc"); } };
-  return (<div style={{ overflowX: "auto", borderRadius: 8, border: `1px solid ${V.border}` }}>
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: "var(--font-body)" }}>
-      <thead><tr>{columns.map(col => (<th key={col.key}>
-        <button onClick={() => toggle(col.key)} style={{ display: "flex", alignItems: "center", gap: 4, width: "100%", justifyContent: col.align === "right" ? "flex-end" : "flex-start", padding: "11px 14px", background: V.bgWarm, color: V.inkMuted, border: "none", borderBottom: `1px solid ${V.border}`, fontWeight: 600, fontSize: 11, letterSpacing: "0.04em", textTransform: "uppercase", cursor: "pointer", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
-          {col.label}{sortKey === col.key && <span style={{ fontSize: 10 }}>{sortDir === "asc" ? " ↑" : " ↓"}</span>}
-        </button></th>))}</tr></thead>
-      <tbody>{sorted.map((row, i) => (<tr key={row.id ?? i} style={{ borderBottom: `1px solid ${V.borderLight}` }} onMouseEnter={e => e.currentTarget.style.background = V.bgWarm} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-        {columns.map(col => (<td key={col.key} style={{ padding: "10px 14px", color: V.inkSoft, textAlign: col.align || "left", whiteSpace: "nowrap" }}>{col.render ? col.render(row[col.key], row) : row[col.key]}</td>))}
-      </tr>))}</tbody>
-    </table>
-    {data.length > maxRows && (<p style={{ padding: 12, textAlign: "center", color: V.inkFaint, fontSize: 12, background: V.bgWarm, margin: 0 }}>Showing {fmtNum(maxRows)} of {fmtNum(data.length)} records</p>)}
-  </div>);
+  
+  const toggle = (k) => {
+    if (sortKey === k) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(k); setSortDir("desc"); }
+  };
+  
+  return (
+    <div style={{ overflowX: "auto", borderRadius: 8, border: `1px solid ${V.border}` }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <thead>
+          <tr>
+            {columns.map(col => (
+              <th key={col.key}>
+                <button onClick={() => toggle(col.key)} style={{ display: "flex", alignItems: "center", gap: 4, width: "100%", justifyContent: col.align === "right" ? "flex-end" : "flex-start", padding: "11px 14px", background: V.bgWarm, color: V.inkMuted, border: "none", borderBottom: `1px solid ${V.border}`, fontWeight: 600, fontSize: 11, letterSpacing: "0.04em", textTransform: "uppercase", cursor: "pointer", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
+                  {col.label}{sortKey === col.key && <span style={{ fontSize: 10 }}>{sortDir === "asc" ? " ↑" : " ↓"}</span>}
+                </button>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((row, i) => (
+            <tr key={row.id ?? i} style={{ borderBottom: `1px solid ${V.borderLight}` }} onMouseEnter={e => e.currentTarget.style.background = V.bgWarm} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              {columns.map(col => (
+                <td key={col.key} style={{ padding: "10px 14px", color: V.inkSoft, textAlign: col.align || "left", whiteSpace: "nowrap" }}>
+                  {col.render ? col.render(row[col.key], row) : row[col.key]}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {data.length > maxRows && (
+        <p style={{ padding: 12, textAlign: "center", color: V.inkFaint, fontSize: 12, background: V.bgWarm, margin: 0 }}>
+          Showing {fmtNum(maxRows)} of {fmtNum(data.length)} records
+        </p>
+      )}
+    </div>
+  );
 }
 
 function BandBar({ min, max, p25, p50, p75, gMin, gMax }) {
   const s = v => ((v - gMin) / (gMax - gMin)) * 100;
-  return (<div style={{ position: "relative", height: 24, background: V.surfaceMuted, borderRadius: 4 }}>
-    <div style={{ position: "absolute", left: `${s(min)}%`, width: `${s(max) - s(min)}%`, top: 4, height: 16, background: V.tealMuted, borderRadius: 3, border: `1px solid ${V.teal}30` }} />
-    <div style={{ position: "absolute", left: `${s(p25)}%`, top: 3, width: 2, height: 18, background: V.blue, borderRadius: 1 }} />
-    <div style={{ position: "absolute", left: `${s(p50)}%`, top: 1, width: 3, height: 22, background: V.teal, borderRadius: 1 }} />
-    <div style={{ position: "absolute", left: `${s(p75)}%`, top: 3, width: 2, height: 18, background: V.amber, borderRadius: 1 }} />
-  </div>);
+  return (
+    <div style={{ position: "relative", height: 24, background: V.surfaceMuted, borderRadius: 4 }}>
+      <div style={{ position: "absolute", left: `${s(min)}%`, width: `${Math.max(s(max) - s(min), 1)}%`, top: 4, height: 16, background: V.tealMuted, borderRadius: 3, border: `1px solid ${V.teal}30` }} />
+      <div style={{ position: "absolute", left: `${s(p25)}%`, top: 3, width: 2, height: 18, background: V.blue, borderRadius: 1 }} />
+      <div style={{ position: "absolute", left: `${s(p50)}%`, top: 1, width: 3, height: 22, background: V.teal, borderRadius: 1 }} />
+      <div style={{ position: "absolute", left: `${s(p75)}%`, top: 3, width: 2, height: 18, background: V.amber, borderRadius: 1 }} />
+    </div>
+  );
 }
 
 const chartTooltipStyle = { background: V.surface, border: `1px solid ${V.border}`, borderRadius: 8, fontSize: 12, fontFamily: "var(--font-body)", boxShadow: "0 4px 12px rgba(0,0,0,0.06)" };
+
+// ============================================================================
+// MAIN APP COMPONENT
+// ============================================================================
 
 export default function Banded() {
   const [tab, setTab] = useState("dashboard");
@@ -175,8 +216,10 @@ export default function Banded() {
   const [loading, setLoading] = useState(true);
   const [dataSource, setDataSource] = useState("loading");
   const [submissions, setSubmissions] = useState([]);
-  const [trends] = useState(buildTrends);
+  const [dataSources, setDataSources] = useState([]);
+  const [sourceStats, setSourceStats] = useState({});
   
+  // Filters
   const [famF, setFamF] = useState("All");
   const [metF, setMetF] = useState("All");
   const [sizeF, setSizeF] = useState("All");
@@ -185,7 +228,7 @@ export default function Banded() {
   const [bandFam, setBandFam] = useState("Software Engineering");
   const [bandMet, setBandMet] = useState("All");
   
-  // Admin mode (toggle with ?admin=true in URL)
+  // Admin mode
   const [isAdmin, setIsAdmin] = useState(false);
   
   useEffect(() => {
@@ -193,7 +236,7 @@ export default function Banded() {
     setIsAdmin(params.get('admin') === 'true');
   }, []);
 
-  // Fetch data from Supabase
+  // Fetch main comp data
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
@@ -201,12 +244,13 @@ export default function Banded() {
         const { data: compData, error } = await supabase
           .from('comp_data')
           .select('*')
-          .eq('status', 'approved');
+          .eq('status', 'approved')
+          .order('scraped_at', { ascending: false })
+          .limit(10000);
         
         if (error) throw error;
         
         if (compData && compData.length > 0) {
-          // Transform database records to match expected format
           const transformed = compData.map(r => ({
             id: r.id,
             company: r.company,
@@ -226,22 +270,60 @@ export default function Banded() {
             skills: r.skills || [],
             source: r.source,
             posted: r.posted_date,
+            scrapedAt: r.scraped_at,
+            confidence: r.confidence_score || 80,
+            jobUrl: r.job_url,
           }));
           setData(transformed);
           setDataSource("database");
+          
+          // Calculate source stats
+          const stats = {};
+          transformed.forEach(r => {
+            if (!stats[r.source]) {
+              stats[r.source] = { count: 0, latestDate: null, avgConfidence: 0, confidenceSum: 0 };
+            }
+            stats[r.source].count++;
+            stats[r.source].confidenceSum += (r.confidence || 80);
+            if (!stats[r.source].latestDate || new Date(r.scrapedAt) > new Date(stats[r.source].latestDate)) {
+              stats[r.source].latestDate = r.scrapedAt;
+            }
+          });
+          Object.keys(stats).forEach(k => {
+            stats[k].avgConfidence = Math.round(stats[k].confidenceSum / stats[k].count);
+          });
+          setSourceStats(stats);
         } else {
-          // Fallback to demo data
-          setData(buildDemoDataset());
-          setDataSource("demo");
+          setData([]);
+          setDataSource("empty");
         }
       } catch (err) {
         console.error("Error fetching from Supabase:", err);
-        setData(buildDemoDataset());
-        setDataSource("demo");
+        setData([]);
+        setDataSource("error");
       }
       setLoading(false);
     }
     fetchData();
+  }, []);
+
+  // Fetch data sources health
+  useEffect(() => {
+    async function fetchSources() {
+      try {
+        const { data: sources, error } = await supabase
+          .from('data_sources')
+          .select('*')
+          .order('source_name');
+        
+        if (!error && sources) {
+          setDataSources(sources);
+        }
+      } catch (err) {
+        console.error("Error fetching sources:", err);
+      }
+    }
+    fetchSources();
   }, []);
 
   // Fetch submissions for admin
@@ -257,53 +339,106 @@ export default function Banded() {
     fetchSubmissions();
   }, [isAdmin, tab]);
 
-  const skills = useMemo(() => {
-    const sm = {}; data.forEach(r => (r.skills || []).forEach(s => { if (!sm[s]) sm[s] = { t: 0, n: 0 }; sm[s].t += r.mid; sm[s].n++; }));
-    const avg = data.length ? data.reduce((a, r) => a + r.mid, 0) / data.length : 0;
-    return Object.entries(sm).map(([skill, d]) => ({ skill, avgPay: Math.round(d.t / d.n), premium: Math.round(d.t / d.n - avg), postings: d.n, trend: Math.round((Math.random() - 0.38) * 16 * 10) / 10 })).sort((a, b) => b.premium - a.premium);
-  }, [data]);
-
+  // Derived data
   const filtered = useMemo(() => data.filter(r => {
     if (famF !== "All" && r.family !== famF) return false;
     if (metF !== "All" && r.metro !== metF) return false;
     if (sizeF !== "All" && r.size !== sizeF) return false;
     if (lvlF !== "All" && r.code !== lvlF) return false;
-    if (q) { const lq = q.toLowerCase(); return r.company?.toLowerCase().includes(lq) || r.title?.toLowerCase().includes(lq) || (r.skills || []).some(s => s.toLowerCase().includes(lq)); }
+    if (q) {
+      const lq = q.toLowerCase();
+      return r.company?.toLowerCase().includes(lq) || r.title?.toLowerCase().includes(lq) || (r.skills || []).some(s => s.toLowerCase().includes(lq));
+    }
     return true;
   }), [data, famF, metF, sizeF, lvlF, q]);
 
   const stats = useMemo(() => {
-    if (!filtered.length) return { med: 0, p25: 0, p75: 0, p90: 0, n: 0, cos: 0 };
-    const m = filtered.map(r => r.mid);
-    return { med: pct(m, 50), p25: pct(m, 25), p75: pct(m, 75), p90: pct(m, 90), n: filtered.length, cos: new Set(filtered.map(r => r.company)).size };
+    if (!filtered.length) return { med: 0, p25: 0, p75: 0, p90: 0, n: 0, cos: 0, sources: 0 };
+    const m = filtered.map(r => r.mid).filter(x => x);
+    const uniqueSources = new Set(filtered.map(r => r.source));
+    return {
+      med: pct(m, 50),
+      p25: pct(m, 25),
+      p75: pct(m, 75),
+      p90: pct(m, 90),
+      n: filtered.length,
+      cos: new Set(filtered.map(r => r.company)).size,
+      sources: uniqueSources.size,
+    };
   }, [filtered]);
 
   const geoData = useMemo(() => {
     const bm = {};
-    filtered.forEach(r => { if (!bm[r.metro]) bm[r.metro] = { mids: [], n: 0, state: r.state, region: r.region }; bm[r.metro].mids.push(r.mid); bm[r.metro].n++; });
-    return Object.entries(bm).map(([metro, d]) => ({ metro, state: d.state, region: d.region, median: Math.round(pct(d.mids, 50)), p25: Math.round(pct(d.mids, 25)), p75: Math.round(pct(d.mids, 75)), postings: d.n })).sort((a, b) => b.median - a.median);
+    filtered.forEach(r => {
+      if (!r.metro) return;
+      if (!bm[r.metro]) bm[r.metro] = { mids: [], n: 0, state: r.state, region: r.region };
+      if (r.mid) {
+        bm[r.metro].mids.push(r.mid);
+        bm[r.metro].n++;
+      }
+    });
+    return Object.entries(bm)
+      .filter(([_, d]) => d.mids.length > 0)
+      .map(([metro, d]) => ({
+        metro,
+        state: d.state,
+        region: d.region,
+        median: Math.round(pct(d.mids, 50)),
+        p25: Math.round(pct(d.mids, 25)),
+        p75: Math.round(pct(d.mids, 75)),
+        postings: d.n
+      }))
+      .sort((a, b) => b.median - a.median);
   }, [filtered]);
 
+  const sourceBreakdown = useMemo(() => {
+    const counts = {};
+    data.forEach(r => {
+      const src = r.source || 'Unknown';
+      counts[src] = (counts[src] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [data]);
+
   const bandRows = useMemo(() => {
-    const cfg = JOB_FAMILIES[bandFam]; if (!cfg) return [];
+    const cfg = JOB_FAMILIES[bandFam];
+    if (!cfg) return [];
     return cfg.levels.map((lv, i) => {
       const mx = data.filter(r => r.family === bandFam && r.title === lv && (bandMet === "All" || r.metro === bandMet));
-      if (!mx.length) { const bM = cfg.base[0] + (cfg.base[1] - cfg.base[0]) * (i / (cfg.levels.length - 1)) * 0.7; const m = bM * 1.1; return { level: lv, code: cfg.codes[i], p25: Math.round(m * .88), p50: Math.round(m), p75: Math.round(m * 1.15), p90: Math.round(m * 1.3), min: Math.round(m * .82), max: Math.round(m * 1.35), n: 0 }; }
-      const ms = mx.map(r => r.mid);
-      return { level: lv, code: cfg.codes[i], p25: Math.round(pct(ms, 25)), p50: Math.round(pct(ms, 50)), p75: Math.round(pct(ms, 75)), p90: Math.round(pct(ms, 90)), min: Math.round(pct(ms, 10)), max: Math.round(pct(ms, 90)), n: mx.length };
+      if (!mx.length) {
+        const bM = cfg.base[0] + (cfg.base[1] - cfg.base[0]) * (i / (cfg.levels.length - 1)) * 0.7;
+        const m = bM * 1.1;
+        return { level: lv, code: cfg.codes[i], p25: Math.round(m * .88), p50: Math.round(m), p75: Math.round(m * 1.15), p90: Math.round(m * 1.3), min: Math.round(m * .82), max: Math.round(m * 1.35), n: 0 };
+      }
+      const ms = mx.map(r => r.mid).filter(x => x);
+      return {
+        level: lv,
+        code: cfg.codes[i],
+        p25: Math.round(pct(ms, 25)),
+        p50: Math.round(pct(ms, 50)),
+        p75: Math.round(pct(ms, 75)),
+        p90: Math.round(pct(ms, 90)),
+        min: Math.round(pct(ms, 10)),
+        max: Math.round(pct(ms, 90)),
+        n: mx.length
+      };
     });
   }, [data, bandFam, bandMet]);
 
+  // Navigation pages
+  const pendingCount = submissions.filter(s => s.status === 'pending').length;
   const pages = [
     { key: "dashboard", label: "Dashboard", icon: "◉" },
     { key: "explore", label: "Explore", icon: "⬡" },
-    { key: "skills", label: "Skills Intel", icon: "◈" },
     { key: "bands", label: "Band Builder", icon: "▤" },
-    { key: "trends", label: "Trends", icon: "◆" },
+    { key: "sources", label: "Data Sources", icon: "◈" },
     { key: "contribute", label: "Contribute", icon: "✦" },
-    ...(isAdmin ? [{ key: "admin", label: "Admin Review", icon: "⚙" }] : []),
+    ...(isAdmin ? [{ key: "admin", label: "Admin Review", icon: "⚙", badge: pendingCount > 0 ? pendingCount : null }] : []),
   ];
 
+  // Search handling
   const searchInputRef = useRef(null);
   const [localSearch, setLocalSearch] = useState("");
   const searchTimeoutRef = useRef(null);
@@ -316,22 +451,18 @@ export default function Banded() {
   }, []);
 
   const filterBarContent = (
-    <div className="fade-up fade-up-1" style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28 }}>
+    <div className="fade-up fade-up-1" style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <input ref={searchInputRef} value={localSearch} onChange={handleSearchChange} placeholder="Search company, title, skill…" autoComplete="off" style={{ padding: "7px 14px", borderRadius: 7, border: `1px solid ${V.border}`, background: V.surface, color: V.ink, fontSize: 13, width: 260, fontFamily: "var(--font-body)" }} onFocus={e => e.target.style.borderColor = V.teal} onBlur={e => e.target.style.borderColor = V.border} />
+        <input ref={searchInputRef} value={localSearch} onChange={handleSearchChange} placeholder="Search company, title, skill…" autoComplete="off" style={{ padding: "7px 14px", borderRadius: 7, border: `1px solid ${V.border}`, background: V.surface, color: V.ink, fontSize: 13, width: 240, fontFamily: "var(--font-body)" }} onFocus={e => e.target.style.borderColor = V.teal} onBlur={e => e.target.style.borderColor = V.border} />
         <span style={{ width: 1, height: 20, background: V.border }} />
         <span style={{ fontSize: 10, color: V.inkFaint, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Family</span>
         <Pill active={famF === "All"} onClick={() => setFamF("All")}>All</Pill>
-        {Object.keys(JOB_FAMILIES).map(f => <Pill key={f} active={famF === f} onClick={() => setFamF(f)}>{f}</Pill>)}
+        {Object.keys(JOB_FAMILIES).slice(0, 4).map(f => <Pill key={f} active={famF === f} onClick={() => setFamF(f)}>{f}</Pill>)}
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <span style={{ fontSize: 10, color: V.inkFaint, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "var(--font-mono)", minWidth: 44 }}>Metro</span>
         <Pill active={metF === "All"} onClick={() => setMetF("All")}>All</Pill>
-        {["San Francisco", "New York", "Seattle", "Denver", "Austin", "Boston", "Remote"].map(m => <Pill key={m} active={metF === m} onClick={() => setMetF(m)}>{m}</Pill>)}
-        <span style={{ width: 1, height: 20, background: V.border }} />
-        <span style={{ fontSize: 10, color: V.inkFaint, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Size</span>
-        <Pill active={sizeF === "All"} onClick={() => setSizeF("All")}>All</Pill>
-        {["smb", "mid-market", "enterprise"].map(s => <Pill key={s} active={sizeF === s} onClick={() => setSizeF(s)}>{s.charAt(0).toUpperCase() + s.slice(1)}</Pill>)}
+        {["San Francisco", "New York", "Seattle", "Denver", "Austin", "Remote"].map(m => <Pill key={m} active={metF === m} onClick={() => setMetF(m)}>{m}</Pill>)}
       </div>
     </div>
   );
@@ -349,46 +480,59 @@ export default function Banded() {
     );
   }
 
+  // ============================================================================
+  // PAGE COMPONENTS
+  // ============================================================================
+
   const Dashboard = () => (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      {dataSource === "demo" && (
-        <div style={{ padding: "12px 16px", background: V.amberMuted, border: `1px solid ${V.amber}30`, borderRadius: 8 }}>
-          <p style={{ margin: 0, fontSize: 13, color: V.amber }}>📊 Showing demo data. Add records to your Supabase database to see real data.</p>
+      {dataSource === "empty" && (
+        <div style={{ padding: "14px 18px", background: V.amberMuted, border: `1px solid ${V.amber}30`, borderRadius: 8 }}>
+          <p style={{ margin: 0, fontSize: 13, color: V.amber }}>📊 No data yet. Run your scrapers or add data via the Contribute page.</p>
         </div>
       )}
       {filterBarContent}
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-        <Metric label="Median Total Comp" value={fmtK(stats.med)} detail={`P25: ${fmtK(stats.p25)} · P75: ${fmtK(stats.p75)}`} delay={0} />
+        <Metric label="Median Comp" value={stats.med ? fmtK(stats.med) : "—"} detail={stats.med ? `P25: ${fmtK(stats.p25)} · P75: ${fmtK(stats.p75)}` : "No data"} delay={0} />
         <Metric label="Data Points" value={fmtNum(stats.n)} detail={`${fmtNum(stats.cos)} companies`} accent={V.blue} delay={1} />
-        <Metric label="90th Percentile" value={fmtK(stats.p90)} detail="Top-of-market" accent={V.amber} delay={2} />
-        <Metric label="Data Source" value={dataSource === "demo" ? "Demo" : "Live"} detail={dataSource === "demo" ? "Sample data" : "Supabase"} accent={dataSource === "demo" ? V.amber : V.teal} delay={3} />
+        <Metric label="Data Sources" value={stats.sources} detail={`${sourceBreakdown.length} active`} accent={V.violet} delay={2} />
+        <Metric label="90th Percentile" value={stats.p90 ? fmtK(stats.p90) : "—"} detail="Top-of-market" accent={V.amber} delay={3} />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-        <section className="fade-up fade-up-4" style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink }}>Compensation Trends</h3>
-          <p style={{ fontSize: 11, color: V.inkFaint, marginTop: 2, marginBottom: 16 }}>Median by family, 6 months</p>
-          <ResponsiveContainer width="100%" height={270}>
-            <LineChart data={trends}>
-              <CartesianGrid strokeDasharray="3 3" stroke={V.borderLight} />
-              <XAxis dataKey="month" tick={{ fill: V.inkFaint, fontSize: 11 }} axisLine={{ stroke: V.border }} />
-              <YAxis tick={{ fill: V.inkFaint, fontSize: 11 }} tickFormatter={v => fmtK(v)} axisLine={{ stroke: V.border }} />
-              <Tooltip contentStyle={chartTooltipStyle} formatter={v => fmt(v)} />
-              {["Software Engineering", "Product Management", "Data Science"].map((f, i) => (<Line key={f} type="monotone" dataKey={f} stroke={V.chartSet[i]} strokeWidth={2} dot={false} />))}
-            </LineChart>
-          </ResponsiveContainer>
-        </section>
-        <section className="fade-up fade-up-5" style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
+      
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14 }}>
+        <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
           <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink }}>Pay by Metro</h3>
           <p style={{ fontSize: 11, color: V.inkFaint, marginTop: 2, marginBottom: 16 }}>Median total comp</p>
-          <ResponsiveContainer width="100%" height={270}>
-            <BarChart data={geoData.slice(0, 8)} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke={V.borderLight} />
-              <XAxis type="number" tick={{ fill: V.inkFaint, fontSize: 11 }} tickFormatter={v => fmtK(v)} axisLine={{ stroke: V.border }} />
-              <YAxis type="category" dataKey="metro" tick={{ fill: V.inkMuted, fontSize: 11 }} width={100} axisLine={{ stroke: V.border }} />
-              <Tooltip contentStyle={chartTooltipStyle} formatter={v => fmt(v)} />
-              <Bar dataKey="median" fill={V.teal} radius={[0, 4, 4, 0]} barSize={16} />
-            </BarChart>
-          </ResponsiveContainer>
+          {geoData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={270}>
+              <BarChart data={geoData.slice(0, 8)} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke={V.borderLight} />
+                <XAxis type="number" tick={{ fill: V.inkFaint, fontSize: 11 }} tickFormatter={v => fmtK(v)} axisLine={{ stroke: V.border }} />
+                <YAxis type="category" dataKey="metro" tick={{ fill: V.inkMuted, fontSize: 11 }} width={100} axisLine={{ stroke: V.border }} />
+                <Tooltip contentStyle={chartTooltipStyle} formatter={v => fmt(v)} />
+                <Bar dataKey="median" fill={V.teal} radius={[0, 4, 4, 0]} barSize={16} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ height: 270, display: "flex", alignItems: "center", justifyContent: "center", color: V.inkFaint }}>No geographic data available</div>
+          )}
+        </section>
+        
+        <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink }}>Data by Source</h3>
+          <p style={{ fontSize: 11, color: V.inkFaint, marginTop: 2, marginBottom: 16 }}>Record distribution</p>
+          {sourceBreakdown.length > 0 ? (
+            <ResponsiveContainer width="100%" height={270}>
+              <PieChart>
+                <Pie data={sourceBreakdown.slice(0, 6)} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name.split(' ')[0]} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                  {sourceBreakdown.slice(0, 6).map((_, i) => <Cell key={i} fill={V.chartSet[i % V.chartSet.length]} />)}
+                </Pie>
+                <Tooltip contentStyle={chartTooltipStyle} formatter={v => fmtNum(v)} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ height: 270, display: "flex", alignItems: "center", justifyContent: "center", color: V.inkFaint }}>No source data available</div>
+          )}
         </section>
       </div>
     </div>
@@ -398,32 +542,15 @@ export default function Banded() {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {filterBarContent}
       <p style={{ fontSize: 13, color: V.inkMuted, margin: 0 }}><strong style={{ color: V.teal }}>{fmtNum(filtered.length)}</strong> records</p>
-      <SortableTable data={filtered} maxRows={80} columns={[
-        { key: "company", label: "Company", render: (v, r) => <span><strong style={{ color: V.ink }}>{v}</strong> <span style={{ color: V.inkFaint, fontSize: 10 }}>({r.size})</span></span> },
+      <SortableTable data={filtered} maxRows={100} columns={[
+        { key: "company", label: "Company", render: (v, r) => <span><strong style={{ color: V.ink }}>{v}</strong></span> },
         { key: "title", label: "Title" },
         { key: "code", label: "Level", align: "center", render: v => <span className="mono" style={{ fontSize: 11, color: V.blue, fontWeight: 600 }}>{v}</span> },
         { key: "metro", label: "Metro" },
-        { key: "mid", label: "Midpoint", align: "right", render: v => <span className="mono" style={{ color: V.tealDark, fontWeight: 600 }}>{fmt(v)}</span> },
-        { key: "source", label: "Source", render: v => <SourceTag source={v} /> },
+        { key: "mid", label: "Midpoint", align: "right", render: v => <span className="mono" style={{ color: V.tealDark, fontWeight: 600 }}>{v ? fmt(v) : "—"}</span> },
+        { key: "source", label: "Source", render: (v, r) => <SourceTag source={v} showConfidence confidence={r.confidence} /> },
+        { key: "scrapedAt", label: "Added", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{timeAgo(v)}</span> },
       ]} />
-    </div>
-  );
-
-  const Skills = () => (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-        <Metric label="Highest Premium" value={skills[0]?.skill || "N/A"} detail={skills[0] ? `+${fmtK(skills[0].premium)} over baseline` : ""} />
-        <Metric label="Skills Tracked" value={String(skills.length)} detail="Across all families" accent={V.violet} delay={1} />
-      </div>
-      <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 16 }}>Skill Premium Breakdown</h3>
-        <SortableTable data={skills} maxRows={20} columns={[
-          { key: "skill", label: "Skill", render: v => <strong style={{ color: V.ink }}>{v}</strong> },
-          { key: "premium", label: "Premium", align: "right", render: v => <span className="mono" style={{ color: v >= 0 ? V.tealDark : V.rose, fontWeight: 600 }}>{v >= 0 ? "+" : ""}{fmtK(v)}</span> },
-          { key: "avgPay", label: "Avg Pay", align: "right", render: v => <span className="mono">{fmtK(v)}</span> },
-          { key: "postings", label: "Posts", align: "right" },
-        ]} />
-      </section>
     </div>
   );
 
@@ -445,37 +572,69 @@ export default function Banded() {
               <select value={bandMet} onChange={e => setBandMet(e.target.value)} style={{ padding: "8px 12px", borderRadius: 7, border: `1px solid ${V.border}`, background: V.surface, color: V.ink, fontSize: 13, minWidth: 200 }}><option value="All">All Markets</option>{METROS.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}</select>
             </div>
           </div>
-          {bandRows.map((b, i) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "150px 50px 1fr 70px 70px 70px", gap: 10, alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${V.borderLight}` }}>
-            <span style={{ color: V.ink, fontWeight: 600, fontSize: 13 }}>{b.level}</span>
-            <span className="mono" style={{ fontSize: 11, color: V.blue }}>{b.code}</span>
-            <BandBar min={b.min} max={b.max} p25={b.p25} p50={b.p50} p75={b.p75} gMin={gMin} gMax={gMax} />
-            <span className="mono" style={{ fontSize: 12, color: V.inkMuted, textAlign: "right" }}>{fmtK(b.p25)}</span>
-            <span className="mono" style={{ fontSize: 12, color: V.tealDark, textAlign: "right", fontWeight: 600 }}>{fmtK(b.p50)}</span>
-            <span className="mono" style={{ fontSize: 12, color: V.inkMuted, textAlign: "right" }}>{fmtK(b.p75)}</span>
-          </div>))}
+          {bandRows.map((b, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "150px 50px 1fr 70px 70px 70px 50px", gap: 10, alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${V.borderLight}` }}>
+              <span style={{ color: V.ink, fontWeight: 600, fontSize: 13 }}>{b.level}</span>
+              <span className="mono" style={{ fontSize: 11, color: V.blue }}>{b.code}</span>
+              <BandBar min={b.min} max={b.max} p25={b.p25} p50={b.p50} p75={b.p75} gMin={gMin || 50000} gMax={gMax || 500000} />
+              <span className="mono" style={{ fontSize: 12, color: V.inkMuted, textAlign: "right" }}>{fmtK(b.p25)}</span>
+              <span className="mono" style={{ fontSize: 12, color: V.tealDark, textAlign: "right", fontWeight: 600 }}>{fmtK(b.p50)}</span>
+              <span className="mono" style={{ fontSize: 12, color: V.inkMuted, textAlign: "right" }}>{fmtK(b.p75)}</span>
+              <span style={{ fontSize: 10, color: V.inkFaint, textAlign: "right" }}>n={b.n}</span>
+            </div>
+          ))}
         </section>
       </div>
     );
   };
 
-  const Trends = () => (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink }}>Trend Lines</h3>
-        <ResponsiveContainer width="100%" height={340}>
-          <AreaChart data={trends}>
-            <defs>{V.chartSet.map((c, i) => (<linearGradient key={i} id={`tg${i}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={c} stopOpacity={0.2} /><stop offset="95%" stopColor={c} stopOpacity={0} /></linearGradient>))}</defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={V.borderLight} />
-            <XAxis dataKey="month" tick={{ fill: V.inkFaint, fontSize: 11 }} axisLine={{ stroke: V.border }} />
-            <YAxis tick={{ fill: V.inkFaint, fontSize: 11 }} tickFormatter={v => fmtK(v)} axisLine={{ stroke: V.border }} />
-            <Tooltip contentStyle={chartTooltipStyle} formatter={v => fmt(v)} />
-            <Legend />
-            {["Software Engineering", "Product Management", "Data Science", "Design", "DevOps / SRE"].map((f, i) => (<Area key={f} type="monotone" dataKey={f} stroke={V.chartSet[i]} fill={`url(#tg${i})`} strokeWidth={2} />))}
-          </AreaChart>
-        </ResponsiveContainer>
-      </section>
-    </div>
-  );
+  const DataSources = () => {
+    const sourceList = Object.entries(sourceStats).map(([name, stats]) => ({
+      name,
+      count: stats.count,
+      lastUpdate: stats.latestDate,
+      avgConfidence: stats.avgConfidence,
+    })).sort((a, b) => b.count - a.count);
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+          <Metric label="Total Sources" value={sourceList.length} detail="Active data pipelines" />
+          <Metric label="Total Records" value={fmtNum(data.length)} detail="In database" accent={V.blue} delay={1} />
+          <Metric label="Avg Confidence" value={`${Math.round(sourceList.reduce((a, s) => a + s.avgConfidence, 0) / sourceList.length || 0)}%`} detail="Data quality score" accent={V.teal} delay={2} />
+        </div>
+        
+        <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 16 }}>Source Health</h3>
+          <SortableTable data={sourceList} columns={[
+            { key: "name", label: "Source", render: v => <SourceTag source={v} /> },
+            { key: "count", label: "Records", align: "right", render: v => <span className="mono">{fmtNum(v)}</span> },
+            { key: "avgConfidence", label: "Confidence", align: "right", render: v => {
+              const c = v >= 80 ? V.teal : v >= 60 ? V.amber : V.rose;
+              return (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
+                  <div style={{ width: 50, height: 5, background: V.surfaceMuted, borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ width: `${v}%`, height: "100%", background: c, borderRadius: 3 }} />
+                  </div>
+                  <span className="mono" style={{ fontSize: 11, color: c, fontWeight: 600, width: 35 }}>{v}%</span>
+                </div>
+              );
+            }},
+            { key: "lastUpdate", label: "Last Update", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{timeAgo(v)}</span> },
+          ]} />
+        </section>
+        
+        <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 8 }}>About Data Quality</h3>
+          <p style={{ fontSize: 13, color: V.inkMuted, lineHeight: 1.6, margin: 0 }}>
+            Confidence scores reflect data reliability. Government sources (H-1B, BLS) score highest (90-100%) as they contain verified salary data. 
+            Job board postings (Greenhouse, Lever) score 70-85% based on salary range completeness. 
+            User submissions start at 70% and increase after verification.
+          </p>
+        </section>
+      </div>
+    );
+  };
 
   const Contribute = () => {
     const [formData, setFormData] = useState({ jobTitle: '', company: '', baseSalary: '', yoe: '', metro: '', jobFamily: '' });
@@ -484,28 +643,52 @@ export default function Banded() {
 
     const handleSubmit = async (e) => {
       e.preventDefault();
+      
+      // Prevent double submission
+      if (isSubmitting) return;
+      
       setIsSubmitting(true);
       setStatus({ type: 'info', message: 'Submitting...' });
 
-      try {
-        const { error } = await supabase.from('submissions').insert([{
-          job_title: formData.jobTitle,
-          company: formData.company,
-          job_family: formData.jobFamily,
-          base_salary: parseInt(formData.baseSalary),
-          years_of_exp: parseInt(formData.yoe),
-          metro: formData.metro,
-          status: 'pending'
-        }]);
-
-        if (error) throw error;
-
-        setStatus({ type: 'success', message: 'Submitted for review! Thank you for contributing.' });
-        setFormData({ jobTitle: '', company: '', baseSalary: '', yoe: '', metro: '', jobFamily: '' });
-      } catch (err) {
-        console.error("Submission error:", err);
-        setStatus({ type: 'error', message: 'Failed to submit. Please try again.' });
+      // Validate salary
+      const salary = parseInt(formData.baseSalary);
+      if (isNaN(salary) || salary < 20000 || salary > 2000000) {
+        setStatus({ type: 'error', message: 'Please enter a valid salary between $20,000 and $2,000,000.' });
+        setIsSubmitting(false);
+        return;
       }
+
+      try {
+        const { data: result, error } = await supabase
+          .from('submissions')
+          .insert([{
+            job_title: formData.jobTitle.trim(),
+            company: formData.company.trim(),
+            job_family: formData.jobFamily,
+            base_salary: salary,
+            years_of_exp: parseInt(formData.yoe) || null,
+            metro: formData.metro,
+            status: 'pending',
+            confidence_score: 70,
+          }])
+          .select();
+
+        if (error) {
+          console.error("Submission error:", error);
+          setStatus({ type: 'error', message: `Failed to submit: ${error.message}` });
+          setIsSubmitting(false);
+          return;
+        }
+
+        // Success!
+        setStatus({ type: 'success', message: 'Thank you! Your submission is pending review and will appear once approved.' });
+        setFormData({ jobTitle: '', company: '', baseSalary: '', yoe: '', metro: '', jobFamily: '' });
+        
+      } catch (err) {
+        console.error("Unexpected error:", err);
+        setStatus({ type: 'error', message: 'An unexpected error occurred. Please try again.' });
+      }
+      
       setIsSubmitting(false);
     };
 
@@ -516,61 +699,207 @@ export default function Banded() {
       <div style={{ maxWidth: 720 }}>
         <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 28 }}>
           <h2 style={{ fontSize: 22, fontWeight: 400, color: V.ink, fontFamily: 'var(--font-display)', margin: 0 }}>Anonymously Share Your Comp</h2>
-          <p style={{ fontSize: 13, color: V.inkMuted, marginTop: 8, marginBottom: 24 }}>Help democratize salary data. All submissions are reviewed before going live.</p>
+          <p style={{ fontSize: 13, color: V.inkMuted, marginTop: 8, marginBottom: 24 }}>
+            Help build the most comprehensive compensation database. All submissions are anonymous and reviewed before publishing.
+          </p>
+          
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <div><label style={labelStyle}>Job Title</label><input type="text" required placeholder="e.g. Senior Software Engineer" value={formData.jobTitle} onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })} style={inputStyle} /></div>
+            <div>
+              <label style={labelStyle}>Job Title *</label>
+              <input 
+                type="text" 
+                required 
+                placeholder="e.g. Senior Software Engineer" 
+                value={formData.jobTitle} 
+                onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })} 
+                style={inputStyle}
+                disabled={isSubmitting}
+              />
+            </div>
+            
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <div><label style={labelStyle}>Company</label><input type="text" required placeholder="e.g. Stripe" value={formData.company} onChange={(e) => setFormData({ ...formData, company: e.target.value })} style={inputStyle} /></div>
-              <div><label style={labelStyle}>Job Family</label><select required value={formData.jobFamily} onChange={(e) => setFormData({ ...formData, jobFamily: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}><option value="">Select...</option>{Object.keys(JOB_FAMILIES).map(f => <option key={f} value={f}>{f}</option>)}</select></div>
+              <div>
+                <label style={labelStyle}>Company *</label>
+                <input 
+                  type="text" 
+                  required 
+                  placeholder="e.g. Stripe" 
+                  value={formData.company} 
+                  onChange={(e) => setFormData({ ...formData, company: e.target.value })} 
+                  style={inputStyle}
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Job Family *</label>
+                <select 
+                  required 
+                  value={formData.jobFamily} 
+                  onChange={(e) => setFormData({ ...formData, jobFamily: e.target.value })} 
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                  disabled={isSubmitting}
+                >
+                  <option value="">Select...</option>
+                  {Object.keys(JOB_FAMILIES).map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
             </div>
+            
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
-              <div><label style={labelStyle}>Base Salary (USD)</label><input type="number" required placeholder="150000" value={formData.baseSalary} onChange={(e) => setFormData({ ...formData, baseSalary: e.target.value })} style={inputStyle} /></div>
-              <div><label style={labelStyle}>Years of Exp</label><input type="number" required placeholder="5" value={formData.yoe} onChange={(e) => setFormData({ ...formData, yoe: e.target.value })} style={inputStyle} /></div>
-              <div><label style={labelStyle}>Metro</label><select required value={formData.metro} onChange={(e) => setFormData({ ...formData, metro: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}><option value="">Select...</option>{METROS.map(m => <option key={m.name} value={m.name}>{m.name}, {m.state}</option>)}</select></div>
+              <div>
+                <label style={labelStyle}>Base Salary (USD) *</label>
+                <input 
+                  type="number" 
+                  required 
+                  placeholder="150000" 
+                  value={formData.baseSalary} 
+                  onChange={(e) => setFormData({ ...formData, baseSalary: e.target.value })} 
+                  style={inputStyle}
+                  min="20000"
+                  max="2000000"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Years of Exp</label>
+                <input 
+                  type="number" 
+                  placeholder="5" 
+                  value={formData.yoe} 
+                  onChange={(e) => setFormData({ ...formData, yoe: e.target.value })} 
+                  style={inputStyle}
+                  min="0"
+                  max="50"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Metro *</label>
+                <select 
+                  required 
+                  value={formData.metro} 
+                  onChange={(e) => setFormData({ ...formData, metro: e.target.value })} 
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                  disabled={isSubmitting}
+                >
+                  <option value="">Select...</option>
+                  {METROS.map(m => <option key={m.name} value={m.name}>{m.name}, {m.state}</option>)}
+                </select>
+              </div>
             </div>
-            <button type="submit" disabled={isSubmitting} style={{ marginTop: 8, padding: '12px 24px', borderRadius: 7, border: 'none', background: isSubmitting ? V.inkFaint : V.teal, color: '#fff', fontSize: 14, fontWeight: 600, cursor: isSubmitting ? 'not-allowed' : 'pointer' }}>{isSubmitting ? 'Submitting...' : 'Submit Anonymously'}</button>
-            {status.message && (<div style={{ marginTop: 8, padding: '12px 16px', borderRadius: 7, background: status.type === 'success' ? V.tealMuted : status.type === 'error' ? V.roseMuted : V.blueMuted }}><p style={{ margin: 0, fontSize: 13, color: status.type === 'success' ? V.tealDark : status.type === 'error' ? V.rose : V.blue }}>{status.message}</p></div>)}
+            
+            <button 
+              type="submit" 
+              disabled={isSubmitting} 
+              style={{ 
+                marginTop: 8, 
+                padding: '12px 24px', 
+                borderRadius: 7, 
+                border: 'none', 
+                background: isSubmitting ? V.inkFaint : V.teal, 
+                color: '#fff', 
+                fontSize: 14, 
+                fontWeight: 600, 
+                cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                transition: 'background 0.15s ease'
+              }}
+            >
+              {isSubmitting ? 'Submitting...' : 'Submit Anonymously'}
+            </button>
+            
+            {status.message && (
+              <div style={{ 
+                marginTop: 8, 
+                padding: '12px 16px', 
+                borderRadius: 7, 
+                background: status.type === 'success' ? V.tealMuted : status.type === 'error' ? V.roseMuted : V.blueMuted,
+                border: `1px solid ${status.type === 'success' ? V.teal : status.type === 'error' ? V.rose : V.blue}30`
+              }}>
+                <p style={{ margin: 0, fontSize: 13, color: status.type === 'success' ? V.tealDark : status.type === 'error' ? V.rose : V.blue }}>
+                  {status.message}
+                </p>
+              </div>
+            )}
           </form>
+        </section>
+        
+        <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 24, marginTop: 20 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 12 }}>What happens to your data?</h3>
+          <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: V.inkMuted, lineHeight: 1.8 }}>
+            <li>Your submission is completely anonymous - we don't collect any identifying information</li>
+            <li>Data is reviewed for accuracy before being added to the database</li>
+            <li>Approved submissions appear with a "User Submission" source tag</li>
+            <li>All data contributes to more accurate salary bands for everyone</li>
+          </ul>
         </section>
       </div>
     );
   };
 
   const AdminReview = () => {
+    const [actionLoading, setActionLoading] = useState(null);
+
     const handleApprove = async (id, sub) => {
-      // Add to comp_data
-      await supabase.from('comp_data').insert([{
-        company: sub.company,
-        family: sub.job_family,
-        title: sub.job_title,
-        metro: sub.metro,
-        midpoint: sub.base_salary,
-        salary_min: Math.round(sub.base_salary * 0.85),
-        salary_max: Math.round(sub.base_salary * 1.15),
-        source: 'User Submission',
-        status: 'approved'
-      }]);
-      // Update submission status
-      await supabase.from('submissions').update({ status: 'approved' }).eq('id', id);
-      setSubmissions(s => s.filter(x => x.id !== id));
+      setActionLoading(id);
+      try {
+        // Add to comp_data
+        const { error: insertError } = await supabase.from('comp_data').insert([{
+          company: sub.company,
+          family: sub.job_family,
+          title: sub.job_title,
+          metro: sub.metro,
+          midpoint: sub.base_salary,
+          salary_min: Math.round(sub.base_salary * 0.9),
+          salary_max: Math.round(sub.base_salary * 1.1),
+          source: 'User Submission',
+          status: 'approved',
+          confidence_score: 75,
+          scraped_at: new Date().toISOString(),
+        }]);
+        
+        if (insertError) throw insertError;
+        
+        // Update submission status
+        await supabase.from('submissions').update({ 
+          status: 'approved',
+          reviewed_at: new Date().toISOString(),
+        }).eq('id', id);
+        
+        setSubmissions(s => s.filter(x => x.id !== id));
+      } catch (err) {
+        console.error("Approve error:", err);
+        alert("Failed to approve: " + err.message);
+      }
+      setActionLoading(null);
     };
 
     const handleReject = async (id) => {
-      await supabase.from('submissions').update({ status: 'rejected' }).eq('id', id);
-      setSubmissions(s => s.filter(x => x.id !== id));
+      setActionLoading(id);
+      try {
+        await supabase.from('submissions').update({ 
+          status: 'rejected',
+          reviewed_at: new Date().toISOString(),
+        }).eq('id', id);
+        setSubmissions(s => s.filter(x => x.id !== id));
+      } catch (err) {
+        console.error("Reject error:", err);
+      }
+      setActionLoading(null);
     };
 
     const pending = submissions.filter(s => s.status === 'pending');
+    const reviewed = submissions.filter(s => s.status !== 'pending').slice(0, 20);
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
         <div style={{ padding: "12px 16px", background: V.blueMuted, border: `1px solid ${V.blue}30`, borderRadius: 8 }}>
           <p style={{ margin: 0, fontSize: 13, color: V.blue }}>🔒 Admin view. {pending.length} submissions pending review.</p>
         </div>
+        
         <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
           <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 16 }}>Pending Submissions</h3>
           {pending.length === 0 ? (
-            <p style={{ color: V.inkMuted, fontSize: 13 }}>No pending submissions.</p>
+            <p style={{ color: V.inkMuted, fontSize: 13 }}>No pending submissions. 🎉</p>
           ) : (
             <SortableTable data={pending} columns={[
               { key: "job_title", label: "Title", render: v => <strong style={{ color: V.ink }}>{v}</strong> },
@@ -578,40 +907,91 @@ export default function Banded() {
               { key: "job_family", label: "Family" },
               { key: "base_salary", label: "Salary", align: "right", render: v => <span className="mono">{fmt(v)}</span> },
               { key: "metro", label: "Metro" },
-              { key: "submitted_at", label: "Submitted", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{new Date(v).toLocaleDateString()}</span> },
+              { key: "submitted_at", label: "Submitted", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{timeAgo(v)}</span> },
               { key: "actions", label: "Actions", render: (_, row) => (
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => handleApprove(row.id, row)} style={{ padding: "4px 12px", borderRadius: 5, border: "none", background: V.teal, color: "#fff", fontSize: 11, cursor: "pointer" }}>Approve</button>
-                  <button onClick={() => handleReject(row.id)} style={{ padding: "4px 12px", borderRadius: 5, border: `1px solid ${V.rose}`, background: "transparent", color: V.rose, fontSize: 11, cursor: "pointer" }}>Reject</button>
+                  <button 
+                    onClick={() => handleApprove(row.id, row)} 
+                    disabled={actionLoading === row.id}
+                    style={{ padding: "4px 12px", borderRadius: 5, border: "none", background: V.teal, color: "#fff", fontSize: 11, cursor: actionLoading === row.id ? "not-allowed" : "pointer", opacity: actionLoading === row.id ? 0.5 : 1 }}
+                  >
+                    {actionLoading === row.id ? '...' : 'Approve'}
+                  </button>
+                  <button 
+                    onClick={() => handleReject(row.id)} 
+                    disabled={actionLoading === row.id}
+                    style={{ padding: "4px 12px", borderRadius: 5, border: `1px solid ${V.rose}`, background: "transparent", color: V.rose, fontSize: 11, cursor: actionLoading === row.id ? "not-allowed" : "pointer" }}
+                  >
+                    Reject
+                  </button>
                 </div>
               )}
             ]} />
           )}
         </section>
+        
+        {reviewed.length > 0 && (
+          <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 16 }}>Recently Reviewed</h3>
+            <SortableTable data={reviewed} columns={[
+              { key: "job_title", label: "Title" },
+              { key: "company", label: "Company" },
+              { key: "base_salary", label: "Salary", align: "right", render: v => <span className="mono">{fmt(v)}</span> },
+              { key: "status", label: "Status", render: v => (
+                <span style={{ padding: "2px 8px", borderRadius: 4, background: v === 'approved' ? V.tealMuted : V.roseMuted, color: v === 'approved' ? V.tealDark : V.rose, fontSize: 11, fontWeight: 600 }}>
+                  {v}
+                </span>
+              )},
+              { key: "reviewed_at", label: "Reviewed", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{timeAgo(v)}</span> },
+            ]} />
+          </section>
+        )}
       </div>
     );
   };
 
-  const content = { dashboard: Dashboard, explore: Explore, skills: Skills, bands: Bands, trends: Trends, contribute: Contribute, admin: AdminReview };
+  const content = { dashboard: Dashboard, explore: Explore, bands: Bands, sources: DataSources, contribute: Contribute, admin: AdminReview };
   const Page = content[tab] || Dashboard;
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
 
   return (
     <div style={{ minHeight: "100vh", background: V.bg, color: V.ink, fontFamily: "var(--font-body)", display: "flex" }}>
       <style>{GLOBAL_CSS}</style>
+      
+      {/* Sidebar */}
       <nav style={{ width: 220, minHeight: "100vh", background: V.surface, borderRight: `1px solid ${V.border}`, padding: "20px 12px", display: "flex", flexDirection: "column", flexShrink: 0 }}>
         <div style={{ padding: "0 12px", marginBottom: 28 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 30, height: 30, borderRadius: 7, background: V.teal, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="2" rx="1" fill="white" /><rect x="4" y="7" width="8" height="2" rx="1" fill="white" opacity="0.7" /><rect x="3" y="11" width="10" height="2" rx="1" fill="white" opacity="0.4" /></svg>
             </div>
-            <div><p style={{ fontSize: 17, fontWeight: 400, color: V.ink, fontFamily: "var(--font-display)", margin: 0 }}>Banded</p><p style={{ fontSize: 9, color: V.inkFaint, letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "var(--font-mono)", margin: 0 }}>Comp Intelligence</p></div>
+            <div>
+              <p style={{ fontSize: 17, fontWeight: 400, color: V.ink, fontFamily: "var(--font-display)", margin: 0 }}>Banded</p>
+              <p style={{ fontSize: 9, color: V.inkFaint, letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "var(--font-mono)", margin: 0 }}>Comp Intelligence</p>
+            </div>
           </div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>{pages.map(p => (<NavBtn key={p.key} active={tab === p.key} onClick={() => setTab(p.key)} icon={p.icon}>{p.label}</NavBtn>))}</div>
+        
+        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          {pages.map(p => (
+            <NavBtn key={p.key} active={tab === p.key} onClick={() => setTab(p.key)} icon={p.icon} badge={p.badge}>
+              {p.label}
+            </NavBtn>
+          ))}
+        </div>
+        
         <div style={{ marginTop: "auto", padding: "14px 12px", borderTop: `1px solid ${V.borderLight}` }}>
-          <p style={{ fontSize: 10, color: V.inkFaint, lineHeight: 1.7, margin: 0 }}><strong style={{ color: V.inkMuted }}>Data</strong><br />{dataSource === "demo" ? "Demo mode" : "Connected to Supabase"}</p>
+          <p style={{ fontSize: 10, color: V.inkFaint, lineHeight: 1.7, margin: 0 }}>
+            <strong style={{ color: V.inkMuted }}>Status</strong><br />
+            {dataSource === "database" ? `${fmtNum(data.length)} records` : dataSource === "empty" ? "No data" : "Loading..."}
+          </p>
         </div>
       </nav>
+      
+      {/* Main content */}
       <main style={{ flex: 1, overflow: "auto", maxHeight: "100vh", minWidth: 0 }}>
         <header style={{ padding: "18px 32px", borderBottom: `1px solid ${V.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", background: V.surface }}>
           <div>
