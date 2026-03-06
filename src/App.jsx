@@ -838,12 +838,13 @@ export default function Banded() {
 
   const AdminReview = () => {
     const [actionLoading, setActionLoading] = useState(null);
+    const [adminTab, setAdminTab] = useState('pending');
 
     const handleApprove = async (id, sub) => {
       setActionLoading(id);
       try {
-        // Add to comp_data
-        const { error: insertError } = await supabase.from('comp_data').insert([{
+        // Add to comp_data - only use columns we know exist
+        const insertData = {
           company: sub.company,
           family: sub.job_family,
           title: sub.job_title,
@@ -853,19 +854,30 @@ export default function Banded() {
           salary_max: Math.round(sub.base_salary * 1.1),
           source: 'User Submission',
           status: 'approved',
-          confidence_score: 75,
-          scraped_at: new Date().toISOString(),
-        }]);
+        };
         
-        if (insertError) throw insertError;
+        const { error: insertError } = await supabase.from('comp_data').insert([insertData]);
+        
+        if (insertError) {
+          console.error("Insert error:", insertError);
+          alert("Failed to add to comp_data: " + insertError.message);
+          setActionLoading(null);
+          return;
+        }
         
         // Update submission status
-        await supabase.from('submissions').update({ 
-          status: 'approved',
-          reviewed_at: new Date().toISOString(),
-        }).eq('id', id);
+        const { error: updateError } = await supabase
+          .from('submissions')
+          .update({ status: 'approved' })
+          .eq('id', id);
         
-        setSubmissions(s => s.filter(x => x.id !== id));
+        if (updateError) {
+          console.error("Update error:", updateError);
+        }
+        
+        // Remove from local state
+        setSubmissions(s => s.map(x => x.id === id ? { ...x, status: 'approved' } : x));
+        
       } catch (err) {
         console.error("Approve error:", err);
         alert("Failed to approve: " + err.message);
@@ -876,11 +888,16 @@ export default function Banded() {
     const handleReject = async (id) => {
       setActionLoading(id);
       try {
-        await supabase.from('submissions').update({ 
-          status: 'rejected',
-          reviewed_at: new Date().toISOString(),
-        }).eq('id', id);
-        setSubmissions(s => s.filter(x => x.id !== id));
+        const { error } = await supabase
+          .from('submissions')
+          .update({ status: 'rejected' })
+          .eq('id', id);
+        
+        if (error) {
+          console.error("Reject error:", error);
+        }
+        
+        setSubmissions(s => s.map(x => x.id === id ? { ...x, status: 'rejected' } : x));
       } catch (err) {
         console.error("Reject error:", err);
       }
@@ -888,62 +905,112 @@ export default function Banded() {
     };
 
     const pending = submissions.filter(s => s.status === 'pending');
-    const reviewed = submissions.filter(s => s.status !== 'pending').slice(0, 20);
+    const approved = submissions.filter(s => s.status === 'approved');
+    const rejected = submissions.filter(s => s.status === 'rejected');
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
         <div style={{ padding: "12px 16px", background: V.blueMuted, border: `1px solid ${V.blue}30`, borderRadius: 8 }}>
-          <p style={{ margin: 0, fontSize: 13, color: V.blue }}>🔒 Admin view. {pending.length} submissions pending review.</p>
+          <p style={{ margin: 0, fontSize: 13, color: V.blue }}>
+            🔒 Admin view. {pending.length} pending · {approved.length} approved · {rejected.length} rejected
+          </p>
         </div>
         
-        <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 16 }}>Pending Submissions</h3>
-          {pending.length === 0 ? (
-            <p style={{ color: V.inkMuted, fontSize: 13 }}>No pending submissions. 🎉</p>
-          ) : (
-            <SortableTable data={pending} columns={[
-              { key: "job_title", label: "Title", render: v => <strong style={{ color: V.ink }}>{v}</strong> },
-              { key: "company", label: "Company" },
-              { key: "job_family", label: "Family" },
-              { key: "base_salary", label: "Salary", align: "right", render: v => <span className="mono">{fmt(v)}</span> },
-              { key: "metro", label: "Metro" },
-              { key: "submitted_at", label: "Submitted", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{timeAgo(v)}</span> },
-              { key: "actions", label: "Actions", render: (_, row) => (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button 
-                    onClick={() => handleApprove(row.id, row)} 
-                    disabled={actionLoading === row.id}
-                    style={{ padding: "4px 12px", borderRadius: 5, border: "none", background: V.teal, color: "#fff", fontSize: 11, cursor: actionLoading === row.id ? "not-allowed" : "pointer", opacity: actionLoading === row.id ? 0.5 : 1 }}
-                  >
-                    {actionLoading === row.id ? '...' : 'Approve'}
-                  </button>
-                  <button 
-                    onClick={() => handleReject(row.id)} 
-                    disabled={actionLoading === row.id}
-                    style={{ padding: "4px 12px", borderRadius: 5, border: `1px solid ${V.rose}`, background: "transparent", color: V.rose, fontSize: 11, cursor: actionLoading === row.id ? "not-allowed" : "pointer" }}
-                  >
-                    Reject
-                  </button>
-                </div>
-              )}
-            ]} />
-          )}
-        </section>
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 8 }}>
+          <Pill active={adminTab === 'pending'} onClick={() => setAdminTab('pending')}>
+            Pending ({pending.length})
+          </Pill>
+          <Pill active={adminTab === 'approved'} onClick={() => setAdminTab('approved')}>
+            Approved ({approved.length})
+          </Pill>
+          <Pill active={adminTab === 'rejected'} onClick={() => setAdminTab('rejected')}>
+            Rejected ({rejected.length})
+          </Pill>
+        </div>
         
-        {reviewed.length > 0 && (
+        {/* Pending Tab */}
+        {adminTab === 'pending' && (
           <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 16 }}>Recently Reviewed</h3>
-            <SortableTable data={reviewed} columns={[
-              { key: "job_title", label: "Title" },
-              { key: "company", label: "Company" },
-              { key: "base_salary", label: "Salary", align: "right", render: v => <span className="mono">{fmt(v)}</span> },
-              { key: "status", label: "Status", render: v => (
-                <span style={{ padding: "2px 8px", borderRadius: 4, background: v === 'approved' ? V.tealMuted : V.roseMuted, color: v === 'approved' ? V.tealDark : V.rose, fontSize: 11, fontWeight: 600 }}>
-                  {v}
-                </span>
-              )},
-              { key: "reviewed_at", label: "Reviewed", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{timeAgo(v)}</span> },
-            ]} />
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 16 }}>Pending Submissions</h3>
+            {pending.length === 0 ? (
+              <p style={{ color: V.inkMuted, fontSize: 13 }}>No pending submissions. 🎉</p>
+            ) : (
+              <SortableTable data={pending} columns={[
+                { key: "job_title", label: "Title", render: v => <strong style={{ color: V.ink }}>{v}</strong> },
+                { key: "company", label: "Company" },
+                { key: "job_family", label: "Family" },
+                { key: "base_salary", label: "Salary", align: "right", render: v => <span className="mono">{fmt(v)}</span> },
+                { key: "metro", label: "Metro" },
+                { key: "submitted_at", label: "Submitted", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{timeAgo(v)}</span> },
+                { key: "actions", label: "Actions", render: (_, row) => (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button 
+                      onClick={() => handleApprove(row.id, row)} 
+                      disabled={actionLoading === row.id}
+                      style={{ padding: "4px 12px", borderRadius: 5, border: "none", background: V.teal, color: "#fff", fontSize: 11, cursor: actionLoading === row.id ? "not-allowed" : "pointer", opacity: actionLoading === row.id ? 0.5 : 1 }}
+                    >
+                      {actionLoading === row.id ? '...' : 'Approve'}
+                    </button>
+                    <button 
+                      onClick={() => handleReject(row.id)} 
+                      disabled={actionLoading === row.id}
+                      style={{ padding: "4px 12px", borderRadius: 5, border: `1px solid ${V.rose}`, background: "transparent", color: V.rose, fontSize: 11, cursor: actionLoading === row.id ? "not-allowed" : "pointer" }}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                )}
+              ]} />
+            )}
+          </section>
+        )}
+        
+        {/* Approved Tab */}
+        {adminTab === 'approved' && (
+          <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 16 }}>Approved Submissions</h3>
+            {approved.length === 0 ? (
+              <p style={{ color: V.inkMuted, fontSize: 13 }}>No approved submissions yet.</p>
+            ) : (
+              <SortableTable data={approved} columns={[
+                { key: "job_title", label: "Title", render: v => <strong style={{ color: V.ink }}>{v}</strong> },
+                { key: "company", label: "Company" },
+                { key: "job_family", label: "Family" },
+                { key: "base_salary", label: "Salary", align: "right", render: v => <span className="mono">{fmt(v)}</span> },
+                { key: "metro", label: "Metro" },
+                { key: "submitted_at", label: "Submitted", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{timeAgo(v)}</span> },
+                { key: "status", label: "Status", render: () => (
+                  <span style={{ padding: "2px 8px", borderRadius: 4, background: V.tealMuted, color: V.tealDark, fontSize: 11, fontWeight: 600 }}>
+                    Approved
+                  </span>
+                )}
+              ]} />
+            )}
+          </section>
+        )}
+        
+        {/* Rejected Tab */}
+        {adminTab === 'rejected' && (
+          <section style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, padding: 22 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: V.ink, marginBottom: 16 }}>Rejected Submissions</h3>
+            {rejected.length === 0 ? (
+              <p style={{ color: V.inkMuted, fontSize: 13 }}>No rejected submissions.</p>
+            ) : (
+              <SortableTable data={rejected} columns={[
+                { key: "job_title", label: "Title", render: v => <strong style={{ color: V.ink }}>{v}</strong> },
+                { key: "company", label: "Company" },
+                { key: "job_family", label: "Family" },
+                { key: "base_salary", label: "Salary", align: "right", render: v => <span className="mono">{fmt(v)}</span> },
+                { key: "metro", label: "Metro" },
+                { key: "submitted_at", label: "Submitted", render: v => <span style={{ fontSize: 11, color: V.inkFaint }}>{timeAgo(v)}</span> },
+                { key: "status", label: "Status", render: () => (
+                  <span style={{ padding: "2px 8px", borderRadius: 4, background: V.roseMuted, color: V.rose, fontSize: 11, fontWeight: 600 }}>
+                    Rejected
+                  </span>
+                )}
+              ]} />
+            )}
           </section>
         )}
       </div>
