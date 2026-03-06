@@ -139,6 +139,57 @@ function SourceTag({ source, showConfidence, confidence }) {
   );
 }
 
+// SearchBar component - isolated to prevent focus loss
+function SearchBar({ onSearch, onClear, hasActiveSearch }) {
+  const [value, setValue] = useState("");
+  
+  const handleSubmit = () => {
+    onSearch(value);
+  };
+  
+  const handleClear = () => {
+    setValue("");
+    onClear();
+  };
+  
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      onSearch(value);
+    }
+  };
+  
+  return (
+    <div style={{ display: "flex", gap: 0 }}>
+      <input 
+        type="text"
+        value={value} 
+        onChange={(e) => setValue(e.target.value)} 
+        onKeyDown={handleKeyDown}
+        placeholder="Search company, title, skill…" 
+        autoComplete="off" 
+        style={{ padding: "7px 14px", borderRadius: "7px 0 0 7px", border: `1px solid ${V.border}`, borderRight: "none", background: V.surface, color: V.ink, fontSize: 13, width: 200, fontFamily: "var(--font-body)" }} 
+      />
+      <button 
+        type="button"
+        onClick={handleSubmit}
+        style={{ padding: "7px 14px", borderRadius: "0 7px 7px 0", border: `1px solid ${V.teal}`, background: V.teal, color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-body)" }}
+      >
+        Search
+      </button>
+      {hasActiveSearch && (
+        <button 
+          type="button"
+          onClick={handleClear}
+          style={{ marginLeft: 6, padding: "7px 10px", borderRadius: 7, border: `1px solid ${V.border}`, background: "transparent", color: V.inkMuted, fontSize: 12, cursor: "pointer" }}
+        >
+          Clear
+        </button>
+      )}
+    </div>
+  );
+}
+
 function SortableTable({ data, columns, maxRows = 50 }) {
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("desc");
@@ -438,57 +489,16 @@ export default function Banded() {
     ...(isAdmin ? [{ key: "admin", label: "Admin Review", icon: "⚙", badge: pendingCount > 0 ? pendingCount : null }] : []),
   ];
 
-  // Search handling
-  const searchInputRef = useRef(null);
-  const [localSearch, setLocalSearch] = useState("");
-
-  const handleSearchChange = useCallback((e) => {
-    setLocalSearch(e.target.value);
-  }, []);
-
-  const handleSearchSubmit = useCallback(() => {
-    setQ(localSearch);
-  }, [localSearch]);
-
-  const handleSearchKeyDown = useCallback((e) => {
-    if (e.key === 'Enter') {
-      setQ(localSearch);
-    }
-  }, [localSearch]);
-
-  const handleClearSearch = useCallback(() => {
-    setLocalSearch("");
-    setQ("");
-  }, []);
-
+  // Search is handled by SearchBar component
+  
   const filterBarContent = (
     <div className="fade-up fade-up-1" style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", gap: 0 }}>
-          <input 
-            ref={searchInputRef} 
-            value={localSearch} 
-            onChange={handleSearchChange} 
-            onKeyDown={handleSearchKeyDown}
-            placeholder="Search company, title, skill…" 
-            autoComplete="off" 
-            style={{ padding: "7px 14px", borderRadius: "7px 0 0 7px", border: `1px solid ${V.border}`, borderRight: "none", background: V.surface, color: V.ink, fontSize: 13, width: 200, fontFamily: "var(--font-body)" }} 
-          />
-          <button 
-            onClick={handleSearchSubmit}
-            style={{ padding: "7px 14px", borderRadius: "0 7px 7px 0", border: `1px solid ${V.teal}`, background: V.teal, color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-body)" }}
-          >
-            Search
-          </button>
-          {q && (
-            <button 
-              onClick={handleClearSearch}
-              style={{ marginLeft: 6, padding: "7px 10px", borderRadius: 7, border: `1px solid ${V.border}`, background: "transparent", color: V.inkMuted, fontSize: 12, cursor: "pointer" }}
-            >
-              Clear
-            </button>
-          )}
-        </div>
+        <SearchBar 
+          onSearch={(term) => setQ(term)} 
+          onClear={() => setQ("")} 
+          hasActiveSearch={!!q} 
+        />
         <span style={{ width: 1, height: 20, background: V.border }} />
         <span style={{ fontSize: 10, color: V.inkFaint, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Family</span>
         <Pill active={famF === "All"} onClick={() => setFamF("All")}>All</Pill>
