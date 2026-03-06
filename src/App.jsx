@@ -457,12 +457,12 @@ export default function Banded() {
         <span style={{ width: 1, height: 20, background: V.border }} />
         <span style={{ fontSize: 10, color: V.inkFaint, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Family</span>
         <Pill active={famF === "All"} onClick={() => setFamF("All")}>All</Pill>
-        {Object.keys(JOB_FAMILIES).slice(0, 4).map(f => <Pill key={f} active={famF === f} onClick={() => setFamF(f)}>{f}</Pill>)}
+        {Object.keys(JOB_FAMILIES).map(f => <Pill key={f} active={famF === f} onClick={() => setFamF(f)}>{f}</Pill>)}
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <span style={{ fontSize: 10, color: V.inkFaint, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "var(--font-mono)", minWidth: 44 }}>Metro</span>
         <Pill active={metF === "All"} onClick={() => setMetF("All")}>All</Pill>
-        {["San Francisco", "New York", "Seattle", "Denver", "Austin", "Remote"].map(m => <Pill key={m} active={metF === m} onClick={() => setMetF(m)}>{m}</Pill>)}
+        {["San Francisco", "New York", "Seattle", "Denver", "Austin", "Boston", "Chicago", "Los Angeles", "Remote"].map(m => <Pill key={m} active={metF === m} onClick={() => setMetF(m)}>{m}</Pill>)}
       </div>
     </div>
   );
